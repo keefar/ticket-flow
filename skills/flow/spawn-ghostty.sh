@@ -26,6 +26,15 @@ err() {
   exit 1
 }
 
+# Terminal check — spawn pattern is "open new tab in user's current Ghostty
+# window". On other terminals the AppleScript would either fail or pop Ghostty
+# as a brand-new foreground app, surprising the user. Fail fast instead.
+TERM_DETECTED="${TERM_PROGRAM:-unknown}"
+if [[ "$TERM_DETECTED" != "ghostty" ]]; then
+  err "spawn-ghostty.sh requires Ghostty (detected: $TERM_DETECTED).
+Use \`/ticket-flow:flow <id> --local\` for non-Ghostty terminals."
+fi
+
 # Args
 if [[ $# -lt 2 ]]; then
   err "Usage: spawn-ghostty.sh <worktree-path> <kanban-id>"

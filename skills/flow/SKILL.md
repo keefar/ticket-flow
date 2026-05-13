@@ -29,9 +29,10 @@ Für granular-präzise Kontrolle: direkt `/ticket-flow:pickup`, `/ticket-flow:im
 ## Voraussetzungen (für Default-Mode)
 
 - **Ghostty 1.3+** muss installiert sein
+- **Claude Code muss IN Ghostty laufen** (`$TERM_PROGRAM == "ghostty"`). `spawn-ghostty.sh` prüft das vor allem anderen und steigt mit klarer Fehlermeldung aus, wenn /flow von iTerm/Terminal.app/etc. aufgerufen wird. Workaround: `--local` flag.
 - **AppleScript-Permission** für die Terminal-App (oder Claude Code), die `/flow` aufruft, damit sie Ghostty steuern darf. Beim ersten Aufruf erscheint ein macOS-Dialog → einmalig OK klicken. Falls denied: System Settings → Privacy & Security → Automation → Terminal/Claude Code → Ghostty einhaken.
 
-Wenn Ghostty fehlt oder Permission denied: `/ticket-flow:flow` zeigt klare Fehlermeldung + Hinweis auf `--local`.
+Wenn Ghostty fehlt, Terminal-Check fehlschlägt, oder Permission denied: `/ticket-flow:flow` zeigt klare Fehlermeldung + Hinweis auf `--local`.
 
 ## Schritte
 
@@ -109,12 +110,13 @@ TAB_UUID="$("${CLAUDE_PLUGIN_ROOT}/skills/flow/spawn-ghostty.sh" "$WORKTREE" "$I
 SPAWN_EXIT=$?
 ```
 
-- Bei `SPAWN_EXIT != 0` (Ghostty fehlt, Permission denied, etc.): Output:
+- Bei `SPAWN_EXIT != 0` (Ghostty fehlt, Terminal-Check fehlgeschlagen, Permission denied, etc.): Output:
 
   ```
   ❌ Ghostty-Spawn fehlgeschlagen: <stderr>
   
   Möglichkeiten:
+  - Wenn Fehler "requires Ghostty (detected: <other>)": Claude Code in Ghostty starten, ODER `/ticket-flow:flow <id> --local` für Classic-Flow im aktuellen Terminal
   - Ghostty installieren: `brew install --cask ghostty`
   - AppleScript-Permission in System Settings → Privacy & Security → Automation prüfen
   - Stattdessen `/ticket-flow:flow <id> --local` für Classic-Flow in dieser Session
