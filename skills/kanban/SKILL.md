@@ -74,13 +74,13 @@ Exactly the 5 points from KANBAN.md "Workflow Rules":
 ## Format
 
 ```
-| {ID} | `{bd-id}` | `{tag}` | {title} | {note} | {YYYY-MM-DD} |
+| {ID} | `{bd-id}` | `{tag}` | {title} | {note} |
 ```
 
 - **ID**: highest existing + 1, **check across KANBAN.md AND ROADMAP.md** (no duplicate IDs)
 - **bd-id**: from `bd create` output (format `<project>-xxx`, e.g. `PROJ-abc`). When bd is inactive: `—`.
 - **Tags**: `bug` · `change` · `feature` (item type, not status)
-- **Date**: creation date, never change it
+- **Creation date**: not stored in KANBAN.md (recoverable from git log or bd). KANBAN-done.md keeps a `Verified` date column since that's the audit-relevant timestamp.
 
 ## Cluster markers
 

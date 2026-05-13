@@ -18,29 +18,29 @@ Columns: 📥 Inbox · 📋 Backlog · 🔄 In Progress · 🧪 Testing · ✅ D
 
 ## 📥 Inbox
 
-| # | Tag | Title | Note | Date |
-|---|-----|-------|------|------|
+| # | Tag | Title | Note |
+|---|-----|-------|------|
 
 ---
 
 ## 📋 Backlog
 
-| # | Tag | Title | Note | Date |
-|---|-----|-------|------|------|
+| # | Tag | Title | Note |
+|---|-----|-------|------|
 
 ---
 
 ## 🔄 In Progress
 
-| # | Tag | Title | Note | Date |
-|---|-----|-------|------|------|
+| # | Tag | Title | Note |
+|---|-----|-------|------|
 
 ---
 
 ## 🧪 Testing
 
-| # | Tag | Title | Note | Date |
-|---|-----|-------|------|------|
+| # | Tag | Title | Note |
+|---|-----|-------|------|
 
 ---
 
