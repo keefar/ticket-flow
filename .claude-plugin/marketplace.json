@@ -1,0 +1,13 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "ticket-flow",
+  "description": "Kanban + git-worktree-based ticket workflow plugin for Claude Code.",
+  "owner": { "name": "Christoph Schmid" },
+  "plugins": [
+    {
+      "name": "ticket-flow",
+      "description": "Kanban-driven ticket workflow: /spec drafts specs, /pickup creates worktree, /implement executes, /finish merges + deploys, /flow orchestrates the whole loop in Ghostty tabs.",
+      "source": "./"
+    }
+  ]
+}
