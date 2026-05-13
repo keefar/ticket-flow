@@ -2,14 +2,16 @@
 # spawn-ghostty.sh — open a new Ghostty tab in the given worktree, launch
 # an interactive claude session with KANBAN_ID set, write status file, return tab UUID.
 #
-# Background-spawn behavior (#106, #110): the script avoids pulling Ghostty
+# Background-spawn behavior (#106, #110, #2): the script avoids pulling Ghostty
 # to the foreground or switching macOS Spaces. It captures the current
 # frontmost app via System Events, creates the tab without calling `focus`,
 # performs the slow input-text/send-key sequence (which targets the terminal
-# regardless of UI focus), then restores the original frontmost as the LAST
-# step. Earlier restore-position (#106) was overridden by Ghostty re-activating
-# during input-text/send-key — restoring after the final send key avoids the
-# focus-pop.
+# regardless of UI focus), then restores the original frontmost in two stages
+# as the LAST step (AppleScript activate, then 0.5s settle, then LaunchServices
+# `open -b`). Earlier restore-position (#106) was overridden by Ghostty
+# re-activating during input-text/send-key — restoring after the final send
+# key avoids the focus-pop, and the second LaunchServices attempt (#2) catches
+# the residual races AppleScript-Activate loses.
 #
 # Usage: spawn-ghostty.sh <worktree-path> <kanban-id>
 # Output (stdout): tab UUID on success, or "ERROR: <reason>" on failure
@@ -92,9 +94,20 @@ RESTORE_AS=""
 if [[ -n "$FRONTMOST_BID" && "$FRONTMOST_BID" != "$GHOSTTY_BID" ]]; then
   FRONTMOST_ESC="${FRONTMOST_BID//\\/\\\\}"
   FRONTMOST_ESC="${FRONTMOST_ESC//\"/\\\"}"
+  # Two-stage restore (#2): first the AppleScript `activate`, then a 0.5s
+  # settle, then a LaunchServices-level `open -b <bundle-id>`. The second
+  # attempt is more reliable because it goes through LaunchServices instead
+  # of AppleScript-Activate, which loses races against Ghostty's implicit
+  # re-activation during the preceding input-text/send-key. Spec referenced
+  # `open -ga`, but `-g` backgrounds — we want the captured app to actually
+  # come forward, so we use `-b` without `-g`.
   RESTORE_AS=$(cat <<RESTORE_END
 try
   tell application id "${FRONTMOST_ESC}" to activate
+end try
+delay 0.5
+try
+  do shell script "open -b '${FRONTMOST_ESC}'"
 end try
 RESTORE_END
 )
@@ -123,7 +136,7 @@ tell application "Ghostty"
 end tell
 
 tell application "Ghostty"
-  delay 0.8
+  delay 2.0
   input text "\"${WRAP_ESC}\" ${KANBAN_ID}" to newTerm
   send key "enter" to newTerm
   delay 2.5
