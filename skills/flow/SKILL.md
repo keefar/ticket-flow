@@ -257,3 +257,15 @@ The colored emojis (🟡🟢🔴) replace the earlier ⚙/✓/✗ glyphs because
 - The tab was closed manually before the auto-finish trigger
 - Clean up manually: `rm .claude/impl-status/<id>.json`
 - Inspect worktree state: is the item In Progress? → either re-run /ticket-flow:implement, or move it to Testing manually if it's already done
+
+**Spawned tab still steals focus (despite the two-stage restore)**:
+The script does its best — capture frontmost, do an AppleScript `activate` after the input-text sequence, then a LaunchServices `open -b` 0.5s later. On some macOS setups Ghostty still wins the focus race. Workarounds:
+- macOS Settings → Desktop & Dock → Mission Control → uncheck "When switching to an application, switch to a Space with open windows for the application" (reduces Space-switching that compounds focus steal).
+- macOS Settings → Privacy & Security → Automation: confirm the invoking app (Ghostty/Terminal/Claude Code) has the Ghostty automation toggle enabled — a partially-denied permission can make the restore silently fail.
+- Ghostty upstream: track https://ghostty.org/docs/features/applescript for changes to background-tab semantics.
+- Last resort: use `/ticket-flow:flow <id> --local` and stay in the current session.
+
+**Spawned tab opens but the wrap-script line never runs (shell prompt was not ready)**:
+The script `delay 2.0` between tab creation and the first typed line. Slow shell-init (heavy `.zshrc`, network-mounted profile, env managers like `mise`/`asdf`) can blow past 2s. If you see the wrap line typed but no command executed:
+- Lighten shell init for the worktree's shell, or
+- Bump the `delay 2.0` in `spawn-ghostty.sh` (the first `tell application "Ghostty"` block) — 3.0–4.0 is usually enough for the slowest setups.
