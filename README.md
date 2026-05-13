@@ -1,17 +1,27 @@
 # ticket-flow
 
-Kanban + Git-Worktree-basierter Ticket-Workflow für Claude Code. Bietet fünf zusammenarbeitende Skills + einen Orchestrator:
+Kanban + git-worktree based ticket workflow for Claude Code. Five cooperating skills plus an orchestrator:
 
-- `/ticket-flow:spec <id>` — Spec-Doc aus Template anlegen, Kanban-Notiz auf `spec: drafting`
-- `/ticket-flow:pickup <id>` — Phase 1: DoR validieren, Worktree erstellen, Branch-Lock setzen, Item → In Progress
-- `/ticket-flow:implement` — Phase 2: Plan im Worktree ausführen (interaktiv oder via Subagent-Dispatch)
-- `/ticket-flow:finish` — Phase 3: Verifikation, optional Deploy, Merge nach main, Item → Testing
-- `/ticket-flow:flow <id>` — Orchestrator: spawned die ganze Pipeline in einem neuen Ghostty-Tab (Default) oder läuft `--local` mit User-Checkpoints
-- `/ticket-flow:kanban` — Inbox · Backlog · In Progress · Testing pflegen
+- `/ticket-flow:init` — scaffold KANBAN.md + SPEC-TEMPLATE.md in an empty project (run once)
+- `/ticket-flow:spec <id>` — create a spec doc from template, set Kanban note to `spec: drafting`
+- `/ticket-flow:pickup <id>` — phase 1: validate DoR, create worktree, set branch lock, move item to In Progress
+- `/ticket-flow:implement` — phase 2: execute the plan inside the worktree (interactive or via subagent dispatch)
+- `/ticket-flow:finish` — phase 3: verification, optional deploy, merge to main, item → Testing
+- `/ticket-flow:flow <id>` — orchestrator: spawns the full pipeline in a new Ghostty tab (default) or runs `--local` with user checkpoints
+- `/ticket-flow:kanban` — maintain Inbox · Backlog · In Progress · Testing
 
 ## Installation
 
-Das Plugin liegt user-global unter `~/.claude/local-plugins/ticket-flow/`. In `~/.claude/settings.json`:
+### From GitHub
+
+```
+/plugin marketplace add keefar/ticket-flow
+/plugin install ticket-flow@ticket-flow
+```
+
+### Local development
+
+Drop the repo into `~/.claude/local-plugins/ticket-flow/`, then add to `~/.claude/settings.json`:
 
 ```json
 {
@@ -27,69 +37,55 @@ Das Plugin liegt user-global unter `~/.claude/local-plugins/ticket-flow/`. In `~
 }
 ```
 
-Nach Settings-Änderung: Claude-Code neu starten. Skills sind dann in jedem Projekt verfügbar.
+Restart Claude Code after editing settings. The skills are then available in every project.
 
-## Projekt-Anforderungen
+## Project requirements
 
-Das Plugin arbeitet auf folgenden Konventionen im jeweiligen Projekt:
+The plugin operates on the following conventions in each project:
 
-| Pfad | Zweck | Beispiel-Skeleton |
+| Path | Purpose | Skeleton |
 |---|---|---|
-| `KANBAN.md` (Repo-Root) | Operativer Board mit den 4 Spalten Inbox / Backlog / In Progress / Testing | siehe unten |
-| `docs/specs/SPEC-TEMPLATE.md` | Template, das `/ticket-flow:spec` befüllt | min. Frontmatter (id, title, tag, cluster, created, status) + Sections (Context, Acceptance Criteria, Out of Scope, References, Notes) |
-| `docs/specs/<id>-<slug>.md` | Generierte Item-Specs | wird von `/ticket-flow:spec` angelegt |
-| `docs/superpowers/plans/` (optional) | Implementations-Pläne | wird von `/ticket-flow:pickup` referenziert wenn vorhanden |
-| `.claude/impl-status/` | Flow-Status-Files (auto-angelegt) | `<id>.json` pro Spawn |
-| `.claude/worktrees/` | Worktree-Verzeichnis (für EnterWorktree) | auto-angelegt |
+| `KANBAN.md` (repo root) | Operational board with 4 columns Inbox / Backlog / In Progress / Testing | run `/ticket-flow:init` |
+| `docs/specs/SPEC-TEMPLATE.md` | Template that `/ticket-flow:spec` fills in | run `/ticket-flow:init` |
+| `docs/specs/<id>-<slug>.md` | Generated item specs | created by `/ticket-flow:spec` |
+| `docs/superpowers/plans/` (optional) | Implementation plans | referenced by `/ticket-flow:pickup` if present |
+| `.claude/impl-status/` | Flow status files (auto-created) | `<id>.json` per spawn |
+| `.claude/worktrees/` | Worktree directory (for EnterWorktree) | auto-created |
 
-### KANBAN.md Minimal-Skelett
-
-```markdown
-# Kanban
-
-## 📥 Inbox
-| # | Tag | Titel | Notiz | Datum |
-|---|-----|-------|-------|-------|
-
-## 📋 Backlog
-| # | Tag | Titel | Notiz | Datum |
-|---|-----|-------|-------|-------|
-
-## 🔄 In Progress
-| # | Tag | Titel | Notiz | Datum |
-|---|-----|-------|-------|-------|
-
-## 🧪 Testing
-| # | Tag | Titel | Notiz | Datum |
-|---|-----|-------|-------|-------|
-```
-
-Branch-Namen-Konvention: `worktree-<id>-<slug>` (von EnterWorktree generiert) oder `<tag>/<id>-<slug>` (manuell). Notiz-Format pipe-getrennt mit Markers wie `branch: worktree-94-multipoint · [Spec](...) · [Plan](...)`.
-
-## Voraussetzungen
-
-- **macOS** für `/ticket-flow:flow` Default-Mode (verwendet AppleScript)
-- **Ghostty 1.3+** für Tab-Spawning (`brew install --cask ghostty`)
-- **Git** mit `git worktree`-Support (≥ 2.5)
-- Optional: `jq` (Fallback auf `grep`/`sed` wenn nicht vorhanden)
-
-Auf Linux / ohne Ghostty: `--local`-Modus nutzen (`/ticket-flow:flow <id> --local`) — läuft alle drei Phasen sequentiell in der aktuellen Session.
-
-## Erster Aufruf
-
-Beim ersten `/ticket-flow:flow` zeigt macOS einen Permission-Dialog (System Events → Ghostty steuern). Einmalig OK klicken.
-
-Wenn versehentlich „Don't Allow" geklickt: System Settings → Privacy & Security → Automation → eintragende App (Terminal/Ghostty/Claude Code) → Ghostty einhaken.
-
-## Update-Workflow
-
-Plugin ist directory-source — Änderungen sind sofort wirksam, kein Reinstall nötig:
+Quick scaffold for a new project:
 
 ```bash
-# Editieren
+cd <project>
+# in Claude Code:
+/ticket-flow:init
+```
+
+Branch naming convention: `worktree-<id>-<slug>` (generated by EnterWorktree) or `<tag>/<id>-<slug>` (manual). Note format is pipe-separated with markers such as `branch: worktree-94-multipoint · [Spec](...) · [Plan](...)`.
+
+## Prerequisites
+
+- **macOS** for `/ticket-flow:flow` default mode (uses AppleScript)
+- **Ghostty 1.3+** for tab spawning (`brew install --cask ghostty`)
+- **Git** with `git worktree` support (≥ 2.5)
+- Optional: `jq` (falls back to `grep`/`sed` when missing)
+
+On Linux / without Ghostty: use `--local` mode (`/ticket-flow:flow <id> --local`) — runs all three phases sequentially in the current session.
+
+## First run
+
+The first `/ticket-flow:flow` triggers a macOS permission dialog (System Events → control Ghostty). Click OK once.
+
+If you accidentally clicked "Don't Allow": System Settings → Privacy & Security → Automation → enabling app (Terminal/Ghostty/Claude Code) → check Ghostty.
+
+## Update workflow
+
+The plugin is a directory-source plugin — edits take effect immediately, no reinstall:
+
+```bash
+# Edit
 $EDITOR ~/.claude/local-plugins/ticket-flow/skills/flow/SKILL.md
 
-# Tests laufen
+# Run tests
 cd ~/.claude/local-plugins/ticket-flow/skills/flow
 bash tests/test_flow-wrap.sh
 bash tests/test_spawn-ghostty.sh
@@ -97,8 +93,8 @@ bash tests/test_flow-cleanup.sh
 bash tests/test_format-tab-title.sh
 ```
 
-Helper-Scripts resolven sich via `$(dirname "$0")` — funktioniert sowohl in `~/.claude/local-plugins/ticket-flow/skills/flow/` als auch in alten `.claude/skills/flow/` Layouts (Migration backward-compat).
+Helper scripts resolve via `$(dirname "$0")` — works both in `~/.claude/local-plugins/ticket-flow/skills/flow/` and in older `.claude/skills/flow/` layouts (backward-compatible).
 
-## Lizenz
+## License
 
-Privates Plugin, kein Lizenz-File. Bei externer Publikation: Lizenz ergänzen.
+MIT — see [LICENSE](LICENSE).

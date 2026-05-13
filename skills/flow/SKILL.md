@@ -3,42 +3,42 @@ name: flow
 description: Orchestrator for Ticket-Flow — runs /ticket-flow:pickup here, then by default spawns /ticket-flow:implement → auto /ticket-flow:finish in a new Ghostty tab so this session stays free. Pass --local for classic in-session per-phase-checkpoint flow. Invoke as `/ticket-flow:flow <kanban-id>` or `/ticket-flow:flow cleanup` to sweep finished spawns.
 ---
 
-# /flow — Ticket-Flow Orchestrator
+# /flow — Ticket-Flow orchestrator
 
 **Args**:
-- Spawn mode: `<kanban-id>` (required) · `<branch-suffix>` (optional, passed to /pickup) · `--local` (optional, opt-in for classic mode).
+- Spawn mode: `<kanban-id>` (required) · `<branch-suffix>` (optional, forwarded to /pickup) · `--local` (optional, opt-in for classic mode).
 - Cleanup mode: first arg `cleanup`, optional `<kanban-id>` for selective sweep, optional `--stale` to also remove stale-running entries (tab gone, status never reached done/error), optional `--dry-run` for report-only.
 
-## Was es macht
+## What it does
 
-**Default (`/ticket-flow:flow <id>`)**: Pickup läuft hier (Sekunden). Danach spawned ein neuer Ghostty-Tab im Worktree mit eigener Claude-Instanz, die `Skill(ticket-flow:implement)` läuft und bei Erfolg automatisch `Skill(ticket-flow:finish)` triggert. Diese Orchestrator-Session ist sofort wieder frei für `/ticket-flow:spec`, weitere `/ticket-flow:flow`-Aufrufe oder Chat.
+**Default (`/ticket-flow:flow <id>`)**: pickup runs here (seconds). Then a new Ghostty tab spawns inside the worktree with its own Claude instance, which runs `Skill(ticket-flow:implement)` and on success automatically triggers `Skill(ticket-flow:finish)`. The orchestrator session is immediately free again for `/ticket-flow:spec`, more `/ticket-flow:flow` calls, or chat.
 
-**Classic (`/ticket-flow:flow <id> --local`)**: Alle drei Phasen laufen sequentiell in dieser Session, mit User-Checkpoints zwischen den Phasen.
+**Classic (`/ticket-flow:flow <id> --local`)**: all three phases run sequentially in this session with user checkpoints between phases.
 
 ```
 DEFAULT:
-/ticket-flow:pickup <id>  →  spawn-ghostty.sh  →  [Tab läuft autonom durch]
+/ticket-flow:pickup <id>  →  spawn-ghostty.sh  →  [tab runs autonomously]
                                            └─ /ticket-flow:implement → if ok → /ticket-flow:finish
 
 LOCAL:
 /ticket-flow:pickup <id>  →  CHECKPOINT  →  /ticket-flow:implement  →  CHECKPOINT  →  /ticket-flow:finish
 ```
 
-Für granular-präzise Kontrolle: direkt `/ticket-flow:pickup`, `/ticket-flow:implement`, `/ticket-flow:finish` aufrufen.
+For fine-grained control: invoke `/ticket-flow:pickup`, `/ticket-flow:implement`, `/ticket-flow:finish` directly.
 
-## Voraussetzungen (für Default-Mode)
+## Prerequisites (for default mode)
 
-- **Ghostty 1.3+** muss installiert sein
-- **Claude Code muss IN Ghostty laufen** (`$TERM_PROGRAM == "ghostty"`). `spawn-ghostty.sh` prüft das vor allem anderen und steigt mit klarer Fehlermeldung aus, wenn /flow von iTerm/Terminal.app/etc. aufgerufen wird. Workaround: `--local` flag.
-- **AppleScript-Permission** für die Terminal-App (oder Claude Code), die `/flow` aufruft, damit sie Ghostty steuern darf. Beim ersten Aufruf erscheint ein macOS-Dialog → einmalig OK klicken. Falls denied: System Settings → Privacy & Security → Automation → Terminal/Claude Code → Ghostty einhaken.
+- **Ghostty 1.3+** must be installed
+- **Claude Code must run INSIDE Ghostty** (`$TERM_PROGRAM == "ghostty"`). `spawn-ghostty.sh` checks this before anything else and exits with a clear error when /flow is invoked from iTerm/Terminal.app/etc. Workaround: `--local` flag.
+- **AppleScript permission** for the terminal app (or Claude Code) that invokes `/flow` so it can drive Ghostty. The first invocation triggers a macOS dialog → click OK once. If denied: System Settings → Privacy & Security → Automation → Terminal/Claude Code → enable Ghostty.
 
-Wenn Ghostty fehlt, Terminal-Check fehlschlägt, oder Permission denied: `/ticket-flow:flow` zeigt klare Fehlermeldung + Hinweis auf `--local`.
+If Ghostty is missing, the terminal check fails, or permission is denied: `/ticket-flow:flow` shows a clear error message plus a hint to `--local`.
 
-## Schritte
+## Steps
 
-### 0. Cleanup-Subcommand (wenn erster Arg = `cleanup`)
+### 0. Cleanup subcommand (when first arg = `cleanup`)
 
-Wenn `$1 == "cleanup"`: kein Pickup, kein Spawn. Direkt `flow-cleanup.sh` mit den restlichen Args aufrufen und Ergebnis reporten.
+If `$1 == "cleanup"`: no pickup, no spawn. Directly invoke `flow-cleanup.sh` with the remaining args and report the result.
 
 ```bash
 if [[ "${1:-}" == "cleanup" ]]; then
@@ -55,17 +55,17 @@ if [[ "${1:-}" == "cleanup" ]]; then
 fi
 ```
 
-Beispiele:
-- `/ticket-flow:flow cleanup` — alle `done` removen, `error` melden, `running` mit lebendem Tab unverändert
-- `/ticket-flow:flow cleanup 96` — nur #96
-- `/ticket-flow:flow cleanup --stale` — zusätzlich Stale-Running (Tab weg) abräumen
-- `/ticket-flow:flow cleanup --dry-run` — nur listen, keine Aktion
+Examples:
+- `/ticket-flow:flow cleanup` — remove all `done`, report `error`, leave `running` with a live tab untouched
+- `/ticket-flow:flow cleanup 96` — only #96
+- `/ticket-flow:flow cleanup --stale` — additionally sweep stale-running entries (tab gone)
+- `/ticket-flow:flow cleanup --dry-run` — list only, no action
 
-### 1. Args parsen
+### 1. Parse args
 
-- `<kanban-id>` (Pflicht) — z.B. `96`
-- `<branch-suffix>` (optional) — z.B. `mainsline`
-- `--local` Flag (optional, kann an beliebiger Position stehen)
+- `<kanban-id>` (required) — e.g. `96`
+- `<branch-suffix>` (optional) — e.g. `mainsline`
+- `--local` flag (optional, position-independent)
 
 ```bash
 ID=""
@@ -79,181 +79,181 @@ for arg in "$@"; do
 done
 ```
 
-### 1.5. Pre-Spawn Cleanup (Default-Mode)
+### 1.5. Pre-spawn cleanup (default mode)
 
-VOR Pickup: einmal `flow-cleanup.sh` (ohne Args) im Hauptrepo aufrufen. Räumt fertige Vorgänger-Tabs (`status: done`) auf — Worktree, Branch, Status-File werden entfernt, der zugehörige Ghostty-Tab via AppleScript geschlossen (`close terminal id "<UUID>"` bypassed `confirm-close-surface`).
+BEFORE pickup: invoke `flow-cleanup.sh` once (no args) in the main repo. Cleans up finished predecessor tabs (`status: done`) — worktree, branch, status file are removed, the associated Ghostty tab is closed via AppleScript (`close terminal id "<UUID>"` bypasses `confirm-close-surface`).
 
 ```bash
 "${CLAUDE_PLUGIN_ROOT}/skills/flow/flow-cleanup.sh"
 ```
 
-Cleanup ist non-fatal: Auch wenn nichts zum Aufräumen da ist (frischer Start) oder einzelne Items „unmerged" / „error" sind, läuft der Skill durch und reportet. Output wird dem User gezeigt, dann weiter zu Pickup.
+Cleanup is non-fatal: even when there's nothing to clean (fresh start) or individual items are "unmerged" / "error", the skill runs through and reports. Output is shown to the user, then on to pickup.
 
-Skip wenn `--local`: classic mode räumt nichts auf (kein Spawn → keine Tab-Reste).
+Skip if `--local`: classic mode doesn't clean anything (no spawn → no tab leftovers).
 
-### 2. Phase 1: Pickup
+### 2. Phase 1: pickup
 
-`Skill(ticket-flow:pickup)` mit `<kanban-id>` + ggf. `<branch-suffix>`.
+Invoke `Skill(ticket-flow:pickup)` with `<kanban-id>` + optional `<branch-suffix>`.
 
-Bei Fehler (DoR nicht erfüllt, Item nicht in Backlog, etc.): abbrechen + reporten. User kann Issue beheben und `/flow` neu starten.
+On error (DoR not met, item not in Backlog, etc.): abort + report. The user can fix the issue and re-run `/flow`.
 
-Pickup liefert Worktree-Pfad zurück — in Variable `$WORKTREE` halten für Schritt 3.
+Pickup returns the worktree path — keep it in `$WORKTREE` for step 3.
 
-### 3. Branching: Default-Spawn oder --local
+### 3. Branching: default spawn or --local
 
-**Wenn `--local` gesetzt** → weiter mit Schritt 4 (Classic-Flow).
+**If `--local` is set** → continue with step 4 (classic flow).
 
-**Sonst (Default)**:
+**Otherwise (default)**:
 
 ```bash
 TAB_UUID="$("${CLAUDE_PLUGIN_ROOT}/skills/flow/spawn-ghostty.sh" "$WORKTREE" "$ID")"
 SPAWN_EXIT=$?
 ```
 
-- Bei `SPAWN_EXIT != 0` (Ghostty fehlt, Terminal-Check fehlgeschlagen, Permission denied, etc.): Output:
+- If `SPAWN_EXIT != 0` (Ghostty missing, terminal check failed, permission denied, etc.): output:
 
   ```
-  ❌ Ghostty-Spawn fehlgeschlagen: <stderr>
-  
-  Möglichkeiten:
-  - Wenn Fehler "requires Ghostty (detected: <other>)": Claude Code in Ghostty starten, ODER `/ticket-flow:flow <id> --local` für Classic-Flow im aktuellen Terminal
-  - Ghostty installieren: `brew install --cask ghostty`
-  - AppleScript-Permission in System Settings → Privacy & Security → Automation prüfen
-  - Stattdessen `/ticket-flow:flow <id> --local` für Classic-Flow in dieser Session
-  ```
-  
-  Stoppen, KEINEN Spawn-Retry, NICHT auf --local fallback'en (User soll explizit entscheiden).
+  ❌ Ghostty spawn failed: <stderr>
 
-- Bei Erfolg: Output:
+  Options:
+  - If the error says "requires Ghostty (detected: <other>)": run Claude Code inside Ghostty, OR use `/ticket-flow:flow <id> --local` for classic flow in the current terminal
+  - Install Ghostty: `brew install --cask ghostty`
+  - Check AppleScript permission in System Settings → Privacy & Security → Automation
+  - Or use `/ticket-flow:flow <id> --local` for classic flow in this session
+  ```
+
+  Stop, NO spawn retry, NO automatic fallback to --local (the user should decide explicitly).
+
+- On success: output:
 
   ```
-  ✓ /ticket-flow:pickup für #<id> abgeschlossen
+  ✓ /ticket-flow:pickup for #<id> complete
     Branch: <branch>
     Worktree: <path>
-  
-  ✓ Impl-Session in Ghostty-Tab gestartet (UUID: <tab-uuid>)
-    Tab-Titel: "🟡 #<id> <short-name>" (running) → 🟢 done / 🔴 error
-    Auto-Flow: Skill(ticket-flow:implement) → bei Erfolg auto Skill(ticket-flow:finish)
-    Notification beim Abschluss (Glass/Basso)
-    Status-File: .claude/impl-status/<id>.json
-  
-  → Diese Session ist frei für weitere Items, /ticket-flow:spec, Chat.
+
+  ✓ Impl session started in Ghostty tab (UUID: <tab-uuid>)
+    Tab title: "🟡 #<id> <short-name>" (running) → 🟢 done / 🔴 error
+    Auto flow: Skill(ticket-flow:implement) → on success auto Skill(ticket-flow:finish)
+    Notification on completion (Glass/Basso)
+    Status file: .claude/impl-status/<id>.json
+
+  → This session is free for more items, /ticket-flow:spec, chat.
   ```
 
-  **/ticket-flow:flow im Default-Mode endet hier.** Nicht auf Tab-Abschluss warten.
+  **/ticket-flow:flow in default mode ends here.** Do not wait for the tab to finish.
 
-### 4. Classic-Flow Phase 2: Implement (nur wenn --local)
+### 4. Classic flow phase 2: implement (only when --local)
 
-Checkpoint-Output:
+Checkpoint output:
 ```
-✓ /ticket-flow:pickup für #<id> abgeschlossen
+✓ /ticket-flow:pickup for #<id> complete
   Branch: <branch>
   Worktree: <path>
-  Plan: <plan-path oder "fehlt — überlege Plan-Doc">
+  Plan: <plan-path or "missing — consider drafting a plan doc">
 
-Bereit für /ticket-flow:implement (--local mode)?
-[ ] Ja — direkt weitermachen
-[ ] Plan erst schreiben/überprüfen (manuell oder via Skill(superpowers:writing-plans))
-[ ] Stoppen — ich mache Pause
+Ready for /ticket-flow:implement (--local mode)?
+[ ] Yes — go directly
+[ ] Write/review the plan first (manually or via Skill(superpowers:writing-plans))
+[ ] Stop — I'm taking a break
 ```
 
-User-Entscheidung abwarten. Bei OK: `Skill(ticket-flow:implement)`.
+Wait for user decision. On OK: `Skill(ticket-flow:implement)`.
 
-Bei Implement-Fehler: Stoppen, User informieren.
+On implement failure: stop, inform the user.
 
-### 5. Classic-Flow Checkpoint nach Implement (nur wenn --local)
+### 5. Classic flow checkpoint after implement (only when --local)
 
 ```
-✓ /ticket-flow:implement für #<id> abgeschlossen
+✓ /ticket-flow:implement for #<id> complete
   Commits: <count>
-  Typecheck/Test: <status>
-  Spec-AC: <met>/<total>
+  Typecheck/test: <status>
+  Spec ACs: <met>/<total>
 
-Bereit für /ticket-flow:finish?
-[ ] Ja — direkt mergen und nach Testing
-[ ] Erst noch manuell prüfen / nachschärfen
-[ ] Stoppen — ich teste auf Pi vorab
+Ready for /ticket-flow:finish?
+[ ] Yes — merge and move to Testing
+[ ] Review manually / polish further
+[ ] Stop — I'll run the manual test first
 ```
 
-### 6. Classic-Flow Phase 3: Finish (nur wenn --local)
+### 6. Classic flow phase 3: finish (only when --local)
 
-Bei OK: `Skill(ticket-flow:finish)`. Bei Failure: stoppen, User informieren. Kein Auto-Rollback.
+On OK: `Skill(ticket-flow:finish)`. On failure: stop, inform the user. No auto rollback.
 
-### 7. Final Report (nur wenn --local)
+### 7. Final report (only when --local)
 
 ```
-✓ /ticket-flow:flow --local für #<id> abgeschlossen
+✓ /ticket-flow:flow --local for #<id> complete
 
-Pickup: ✓ Branch <branch> + Worktree
-Implement: ✓ <count> Commits + Typecheck/Test grün
-Finish: ✓ Merge nach main + Deploy <version> + Kanban → Testing
+Pickup: ✓ branch <branch> + worktree
+Implement: ✓ <count> commits + typecheck/test green
+Finish: ✓ merge to main + deploy <version> + Kanban → Testing
 
-Manuelle Verifizierung steht aus.
+Manual verification pending.
 ```
 
-## Verhalten bei Unterbrechung
+## Behavior on interruption
 
-`/ticket-flow:flow` ist **stateless** — speichert keinen eigenen Workflow-State. Falls Session zwischen Phasen abbricht:
-- Worktree existiert noch
-- Kanban-Item ist in In Progress mit `branch:`-Marker
-- Status-File `.claude/impl-status/<id>.json` zeigt letzten Stand (running/done/error)
-- User kann mit `/ticket-flow:implement` oder `/ticket-flow:finish` direkt weitermachen — kein erneutes `/ticket-flow:flow <id>` nötig
+`/ticket-flow:flow` is **stateless** — it stores no own workflow state. If the session breaks between phases:
+- The worktree still exists
+- The Kanban item is In Progress with the `branch:` marker
+- The status file `.claude/impl-status/<id>.json` shows the latest state (running/done/error)
+- The user can continue directly with `/ticket-flow:implement` or `/ticket-flow:finish` — no need to re-run `/ticket-flow:flow <id>`
 
-Bei Default-Spawn: nach Spawn ist diese Session vom Tab unabhängig — Schließen der Orchestrator-Session lässt den Tab weiterlaufen.
+For default spawn: after spawn the orchestrator session is independent from the tab — closing the orchestrator session leaves the tab running.
 
-## Tradeoff: Auto-Finish ohne User-Checkpoint (Default-Mode)
+## Tradeoff: auto-finish without user checkpoint (default mode)
 
-Spawned `/ticket-flow:flow <id>` läuft komplett durch bis Deploy + Kanban→Testing **ohne User-Verifikation zwischen Phasen**. Das ist bewusst — der Sinn ist "Fire and forget".
+A spawned `/ticket-flow:flow <id>` runs all the way through to deploy + Kanban→Testing **without user verification between phases**. That's intentional — the point is "fire and forget".
 
-Schutzschichten gegen unbeabsichtigte Deploys bleiben aktiv:
-- `/ticket-flow:implement` stoppt bei Typecheck/Test-Fehler → kein Auto-Finish
-- `/ticket-flow:finish` macht eigene Checks (Spec-AC, Test-Status) bevor merged wird
-- Pi-Deploy-Fehler stoppt mit Notification, kein Rollback
+Safety layers against unintended deploys remain in place:
+- `/ticket-flow:implement` stops on typecheck/test failure → no auto-finish
+- `/ticket-flow:finish` runs its own checks (spec ACs, test status) before merging
+- A deploy failure stops with a notification, no rollback
 
-Wer Per-Phase-Review will: `/ticket-flow:flow <id> --local`.
+For per-phase review: `/ticket-flow:flow <id> --local`.
 
-## Wann nicht /ticket-flow:flow
+## When NOT to use /ticket-flow:flow
 
-- **Triviale 1-File-Edits / 1-Liner-Doc-Fixes**: Spawn-Tab muss komplette Claude-Session bootstrappen (~15k tokens Skills + CLAUDE.md). Bei <5 Tool-Calls Implementation-Arbeit dwarft der Bootstrap die echte Arbeit. Solche Items lieber inline in der aktuellen Session abarbeiten und manuell zu Testing moven.
-- **Reine Recherche-Items**: Item-Output ist eine Doc, kein Code. /ticket-flow:pickup macht trotzdem Worktree, aber /ticket-flow:implement-Pattern ist Subagent-Dispatch + Synthese. /ticket-flow:finish ist dann Doc-Commit + Kanban-Move statt Code-Merge. Funktioniert, aber Overhead.
-- **Tasks aus externem GUI-Tool**: /ticket-flow:pickup OK für Worktree, aber /ticket-flow:implement = interaktive Begleitung des Users der manuell arbeitet. Nicht für Subagents geeignet.
-- **Langfristige Items** (mehrere Tage Arbeit): Phase-Commands direkt nutzen, /ticket-flow:flow ist eher für Single-Session-Tickets gedacht.
+- **Trivial single-file edits / one-line doc fixes**: the spawn tab has to boot a full Claude session (~15k tokens of skills + CLAUDE.md). When implementation is <5 tool calls, bootstrap dwarfs the real work. Knock those out inline in the current session and move to Testing manually.
+- **Pure research items**: the item's output is a doc, not code. /ticket-flow:pickup still creates a worktree, but the /ticket-flow:implement pattern is subagent dispatch + synthesis. /ticket-flow:finish is then doc-commit + Kanban move instead of code-merge. Works, but adds overhead.
+- **Tasks from an external GUI tool**: /ticket-flow:pickup is fine for the worktree, but /ticket-flow:implement = interactive guidance for the user doing the manual work. Not suited for subagents.
+- **Long-running items** (multiple days of work): use the phase commands directly; `/ticket-flow:flow` is meant for single-session tickets.
 
-## Was es NICHT macht
+## What it doesn't do
 
-- Eigene Implementation-Logik — delegiert komplett an Phase-Skills
-- Verifizierung "Done"-Status — das bleibt manuell (echter Pi-Test)
-- Konflikt-Auflösung — bei Merge-Konflikt: User übernimmt
-- Tab-Tracking nach Spawn — Status-File ist die einzige Persistenz; Tab-Lifecycle ist Ghostty-Sache
+- Implementation logic — fully delegates to the phase skills
+- Verifying the "Done" status — that stays manual (real test)
+- Conflict resolution — on a merge conflict, the user takes over
+- Tab tracking after spawn — the status file is the only persistence; tab lifecycle is Ghostty's problem
 
-## Tab-Titel als Visual Status (Default-Mode)
+## Tab title as visual status (default mode)
 
-Der spawned Tab zeigt seinen Status im Tab-Titel via OSC-2 Escape. Format: `<emoji> #<id> <short-name>` — `<short-name>` wird aus dem Branch-Slug (`worktree-<id>-<slug>` → 2-3 Wörter, ≤25 Zeichen) abgeleitet, fällt auf `<emoji> #<id>` zurück wenn die Branch das Pickup-Pattern nicht erfüllt.
+The spawned tab signals its state in the tab title via an OSC-2 escape. Format: `<emoji> #<id> <short-name>` — `<short-name>` is derived from the branch slug (`worktree-<id>-<slug>` → 2–3 words, ≤25 chars) and falls back to `<emoji> #<id>` when the branch doesn't match the pickup pattern.
 
-| Phase | Titel | Mechanismus |
+| Phase | Title | Mechanism |
 |---|---|---|
-| Tab-Spawn / läuft | `🟡 #<id> <short-name>` | `flow-wrap.sh` setzt vor `claude`-Exec via `format-tab-title.sh running <id>` |
-| /finish erfolgreich | `🟢 #<id> <short-name>` | `finish`-Skill (in-session) + `flow-wrap.sh` (post-exit, belt-and-suspenders) |
-| Fehler (implement oder finish) | `🔴 #<id> <short-name>` | jeweiliger Skill (in-session) + `flow-wrap.sh` aus Status-File |
-| Tab geschlossen vor Abschluss | `🟡 #<id> <short-name>` bleibt | Status-File noch `running` |
+| Tab spawned / running | `🟡 #<id> <short-name>` | `flow-wrap.sh` sets it before `claude` exec via `format-tab-title.sh running <id>` |
+| /finish success | `🟢 #<id> <short-name>` | `finish` skill (in-session) + `flow-wrap.sh` (post-exit, belt-and-suspenders) |
+| Error (implement or finish) | `🔴 #<id> <short-name>` | the failing skill (in-session) + `flow-wrap.sh` from the status file |
+| Tab closed before completion | `🟡 #<id> <short-name>` stays | status file still `running` |
 
-Die Farb-Emojis (🟡🟢🔴) statt der vorherigen ⚙/✓/✗-Glyphen geben in Ghostty-Tabs auch in kleinen Schriftgrößen ein gut lesbares Signal — die Lampe ist auf den ersten Blick erkennbar, während ⚙ je nach Font kaum von ✓/✗ zu unterscheiden war. Tab-Hintergrund-Farbe wäre noch ergonomischer, aber Ghostty 1.3.x supportet keine programmatische Tab-Color (Upstream #12235, #2509 offen → Roadmap).
+The colored emojis (🟡🟢🔴) replace the earlier ⚙/✓/✗ glyphs because the lamp is recognizable at a glance even in small font sizes — Ghostty's small tab font makes ⚙ hard to distinguish from ✓/✗. A tab background color would be even better, but Ghostty 1.3.x doesn't support programmatic tab colors (upstream #12235, #2509 open → roadmap).
 
-`flow-wrap.sh` exportiert `CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1` für die spawned `claude`-Instanz — sonst überschreibt Claude den Titel laufend mit seiner Spinner+Summary-Anzeige. In-Session-Titel-Updates aus `implement`/`finish` rufen `set-tab-title.sh` auf (composed mit `format-tab-title.sh` für den formatierten String), das via `osascript do shell script` den auto-mode-Classifier umgeht (direkter `> /dev/ttysXXX`-Write aus Claude-Bash ist blockiert).
+`flow-wrap.sh` exports `CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1` for the spawned `claude` instance — otherwise Claude keeps overwriting the title with its spinner+summary readout. In-session title updates from `implement`/`finish` call `set-tab-title.sh` (composed with `format-tab-title.sh` for the formatted string), which uses `osascript do shell script` to bypass the auto-mode classifier (a direct `> /dev/ttysXXX` write from Claude's bash is blocked).
 
 ## Troubleshooting
 
-**"AppleScript permission denied" beim ersten /ticket-flow:flow-Aufruf**:
-1. System Settings öffnen → Privacy & Security → Automation
-2. Eintrag für die App finden, die den Skill aufruft (Terminal.app, Ghostty selbst, oder Claude Code)
-3. Ghostty-Toggle einhaken
-4. /ticket-flow:flow neu aufrufen
+**"AppleScript permission denied" on the first /ticket-flow:flow call**:
+1. Open System Settings → Privacy & Security → Automation
+2. Find the entry for the app invoking the skill (Terminal.app, Ghostty itself, or Claude Code)
+3. Enable the Ghostty toggle
+4. Re-run /ticket-flow:flow
 
-**Tab öffnet sich nicht obwohl Permission ok**:
-- Ghostty Version prüfen: `ghostty --version` — muss ≥ 1.3.0 sein für AppleScript
-- Ghostty-Doku: https://ghostty.org/docs/features/applescript
+**Tab doesn't open even though permission is OK**:
+- Check Ghostty version: `ghostty --version` — must be ≥ 1.3.0 for AppleScript
+- Ghostty docs: https://ghostty.org/docs/features/applescript
 
-**Status-File bleibt auf `running` obwohl Tab schon zu**:
-- Tab wurde manuell geschlossen vor Auto-Finish-Trigger
-- Manuell aufräumen: `rm .claude/impl-status/<id>.json`
-- Worktree-State prüfen: ist Item in In Progress? → entweder /ticket-flow:implement neu, oder manuell zu Testing wenn schon fertig
+**Status file stays `running` even though the tab is gone**:
+- The tab was closed manually before the auto-finish trigger
+- Clean up manually: `rm .claude/impl-status/<id>.json`
+- Inspect worktree state: is the item In Progress? → either re-run /ticket-flow:implement, or move it to Testing manually if it's already done

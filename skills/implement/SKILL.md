@@ -5,26 +5,26 @@ description: Phase 2 of Ticket-Flow — execute the plan for the current In-Prog
 
 # /ticket-flow:implement — Phase 2 of Ticket-Flow
 
-**Args**: keine — operiert im aktuellen Worktree, leitet Item via `branch:`-Marker aus Haupt-Repo KANBAN.md ab.
+**Args**: none — operates in the current worktree, derives the item via the `branch:` marker in the main repo's KANBAN.md.
 
-## Voraussetzung
+## Prerequisites
 
-- /ticket-flow:pickup wurde ausgeführt (Item ist In Progress, Worktree existiert, `branch:`-Marker gesetzt)
-- Aktuelles Verzeichnis = Worktree (oder User wird gefragt zu wechseln)
+- /ticket-flow:pickup has been run (item is In Progress, worktree exists, `branch:` marker set)
+- Current directory = worktree (or the user is asked to switch)
 
-## Schritte
+## Steps
 
-### 1. Aktuellen Branch + Item finden
+### 1. Find the current branch + item
 
 ```bash
 git branch --show-current
 ```
 
-→ Branch-Name (z.B. `worktree-94-multipoint-messung` bei EnterWorktree, oder `feature/94-multipoint-messung` bei manual git worktree).
+→ branch name (e.g. `worktree-94-multipoint-messung` from EnterWorktree, or `feature/94-multipoint-messung` from manual `git worktree`).
 
-KANBAN.md (im Hauptrepo, nicht im Worktree!) durchsuchen nach `branch: <branch>` in In-Progress-Section.
+Search KANBAN.md (in the **main repo**, not the worktree!) for `branch: <branch>` in the In Progress section.
 
-**WICHTIG bei EnterWorktree-Session**: alle git-Commits müssen mit `cd /pfad/zum/main-repo && git ...` als **single-shell-statement** ausgeführt werden. `git -C <path>` allein reicht NICHT — die Harness-Session-Isolation blockt `.git/index.lock`-Writes außerhalb des Worktree-Pfades, wenn der Process nicht physisch dort steht. Pattern für Commits:
+**IMPORTANT in an EnterWorktree session**: all git commits must run as `cd /path/to/main-repo && git ...` in a **single shell statement**. `git -C <path>` alone is NOT enough — the harness session isolation blocks `.git/index.lock` writes outside the worktree path when the process isn't physically there. Commit pattern:
 
 ```bash
 cd <main-repo-path> && git add <files> && git commit -F - <<'COMMIT'
@@ -32,79 +32,79 @@ cd <main-repo-path> && git add <files> && git commit -F - <<'COMMIT'
 COMMIT
 ```
 
-- Wenn nicht gefunden: Fehler — "Kein Kanban-Item mit `branch: <branch>` in In Progress. Erst /ticket-flow:pickup ausführen."
-- Wenn gefunden: ID, Titel, Tag, Plan-Link extrahieren
+- Not found: error — "No Kanban item with `branch: <branch>` in In Progress. Run /ticket-flow:pickup first."
+- Found: extract ID, title, tag, plan link
 
-### 2. Plan laden
+### 2. Load the plan
 
-- Plan-Link in Notiz vorhanden? → Plan lesen
-- Kein Plan? → User fragen ob /ticket-flow:implement ohne strukturierten Plan weitermachen soll (für triviale Bugs OK)
-- Spec-Link in Notiz? → Spec parallel lesen für Acceptance Criteria
+- Plan link in the note? → read the plan
+- No plan? → ask the user whether to continue /ticket-flow:implement without a structured plan (fine for trivial bugs)
+- Spec link in the note? → read the spec in parallel for Acceptance Criteria
 
-### 3. Implementation-Modus wählen
+### 3. Choose the implementation mode
 
-Plan-Komplexität bewerten:
+Assess plan complexity:
 
-| Plan-Charakter | Modus | Skill |
+| Plan character | Mode | Skill |
 |---|---|---|
-| Single-File-Bug, ≤3 Schritte | Interactive direkt | (kein Sub-Skill) |
-| Multi-Step, sequenziell, sauberer Plan | Plan-Execution | `Skill(superpowers:executing-plans)` |
-| Mehrere unabhängige Stränge (z.B. parallele Recherche) | Subagent-Dispatch | `Skill(superpowers:subagent-driven-development)` oder `dispatching-parallel-agents` |
-| Research-Item (Output ist Doc, kein Code) | Subagent-Dispatch für parallele Quellen, ich synthetisiere | `dispatching-parallel-agents` |
+| Single-file bug, ≤3 steps | Interactive directly | (no sub-skill) |
+| Multi-step, sequential, clean plan | Plan execution | `Skill(superpowers:executing-plans)` |
+| Multiple independent strands (e.g. parallel research) | Subagent dispatch | `Skill(superpowers:subagent-driven-development)` or `dispatching-parallel-agents` |
+| Research item (output is a doc, not code) | Subagent dispatch for parallel sources, synthesized by you | `dispatching-parallel-agents` |
 
-Bei Unsicherheit: User fragen welcher Modus.
+When in doubt: ask the user which mode.
 
-### 4. Implementation ausführen
+### 4. Run the implementation
 
-Im gewählten Modus arbeiten:
-- Incrementelle Commits (kleinere, thematische Commits — nicht ein Riesencommit am Ende)
-- Nach jedem Major-Step: typecheck/test im Worktree
-- Bei UI-Changes: lokales Build mindestens (Deploy kommt in /ticket-flow:finish)
+Work in the chosen mode:
+- Incremental commits (smaller thematic commits — not one mega-commit at the end)
+- After each major step: typecheck/test in the worktree
+- For UI changes: at least a local build (deploy happens in /ticket-flow:finish)
 
-### 5. Spec-Verification (laufend)
+### 5. Spec verification (ongoing)
 
-Wenn Spec mit Acceptance Criteria existiert: nach jedem Step prüfen welche AC nun erfüllt sind. Bei Abschluss aller AC: Bereit für /ticket-flow:finish.
+If a spec with Acceptance Criteria exists: after each step check which ACs are now met. When all ACs are met: ready for /ticket-flow:finish.
 
 ### 6. Report
 
-Standard-Report (immer):
+Standard report (always):
 
 ```
-✓ Implementation für #<id> in <branch> abgeschlossen
+✓ Implementation for #<id> in <branch> complete
 
 Commits: <count>
-Spec-AC erfüllt: <met>/<total> (falls Spec vorhanden)
-Typecheck/Test: <status>
+Spec ACs met: <met>/<total> (if a spec exists)
+Typecheck/test: <status>
 ```
 
-Bei Fehler in Implementation: stoppen, Fehler reporten, **Schritt 7 NICHT ausführen** (kein Auto-Finish, Status=error wenn KANBAN_ID gesetzt — siehe unten).
+On implementation failure: stop, report the error, **do not execute step 7** (no auto-finish; set status=error if KANBAN_ID is set — see below).
 
-### 7. Spawn-Mode Auto-Übergang (nur wenn `KANBAN_ID` Env-Var gesetzt)
+### 7. Spawn-mode auto-handoff (only when `KANBAN_ID` env var is set)
 
-`KANBAN_ID` ist gesetzt wenn diese Session via `spawn-ghostty.sh` aus `/flow` gestartet wurde. Sonst überspringen — User sieht Standard-Report und entscheidet selbst.
+`KANBAN_ID` is set when this session was started via `spawn-ghostty.sh` from `/flow`. Otherwise skip — the user sees the standard report and decides for themselves.
 
-**Bei Implementation-Erfolg:**
+**On implementation success:**
 
-Auto-Übergang zu `/ticket-flow:finish`. Kein User-Checkpoint dazwischen. Direkt:
+Auto-handoff to `/ticket-flow:finish`. No user checkpoint in between. Directly:
 
 ```
 Skill(ticket-flow:finish)
 ```
 
-**Bei Implementation-Fehler** (Tests rot, Build kaputt, Plan-Step fail):
+**On implementation failure** (tests red, build broken, plan step fails):
 
-1. Tab-Titel auf `🔴 #<id> <short-name>` setzen (sofortiges visuelles Status-Feedback im Ghostty-Tab):
+1. Set tab title to `🔴 #<id> <short-name>` (immediate visual status feedback in the Ghostty tab):
 
    ```bash
    "${CLAUDE_PLUGIN_ROOT}/skills/flow/set-tab-title.sh" \
      "$("${CLAUDE_PLUGIN_ROOT}/skills/flow/format-tab-title.sh" error "$KANBAN_ID")"
    ```
 
-   `${CLAUDE_PLUGIN_ROOT}` wird von Claude Code im Skill-Kontext auf den Plugin-Root expandiert (z.B. `~/.claude/local-plugins/ticket-flow/`). Falls die Var nicht gesetzt ist (Skill out-of-plugin geladen): Fehlermeldung an User + den Pfad manuell auflösen.
+   `${CLAUDE_PLUGIN_ROOT}` is expanded by Claude Code in the skill context to the plugin root (e.g. `~/.claude/local-plugins/ticket-flow/`). If the var isn't set (skill loaded outside a plugin): print an error to the user and resolve the path manually.
 
-   `format-tab-title.sh` derived den Short-Name aus dem Branch-Slug (`worktree-<id>-<slug>` → 2-3 Wörter, ≤25 Zeichen). `flow-wrap.sh` setzt nach Claude-Exit nochmal aus dem Status-File. `set-tab-title.sh` ist best-effort (exit 0 auch bei fehlender TTY).
+   `format-tab-title.sh` derives the short name from the branch slug (`worktree-<id>-<slug>` → 2–3 words, ≤25 chars). `flow-wrap.sh` sets the title again from the status file after Claude exits. `set-tab-title.sh` is best-effort (exit 0 even on a missing TTY).
 
-2. Status-File `.claude/impl-status/$KANBAN_ID.json` aktualisieren — `status: "error"`, `finished_at: <now>`, `error_message: <kurzbeschreibung>`. Pfad zum Repo-Root via `git rev-parse --show-toplevel` aus dem Worktree.
+2. Update the status file `.claude/impl-status/$KANBAN_ID.json` — `status: "error"`, `finished_at: <now>`, `error_message: <short description>`. Resolve the repo root via `git rev-parse --show-toplevel` from the worktree.
 
    ```bash
    STATUS_FILE="$(git rev-parse --show-toplevel)/.claude/impl-status/${KANBAN_ID}.json"
@@ -117,35 +117,35 @@ Skill(ticket-flow:finish)
    fi
    ```
 
-3. macOS-Notification:
+3. macOS notification:
 
    ```bash
    NOTIFY_TITLE="${TICKET_FLOW_NOTIFY_TITLE:-$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")}"
-   osascript -e "display notification \"❌ Implement #${KANBAN_ID} fehlgeschlagen — siehe Tab\" with title \"$NOTIFY_TITLE\" sound name \"Basso\""
+   osascript -e "display notification \"❌ Implement #${KANBAN_ID} failed — see tab\" with title \"$NOTIFY_TITLE\" sound name \"Basso\""
    ```
 
-   `$NOTIFY_TITLE` defaults to the current project directory name (basename of `git rev-parse --show-toplevel`, fallback to `pwd`). Override with `TICKET_FLOW_NOTIFY_TITLE=<name>` in shell env for a custom notification group.
+   `$NOTIFY_TITLE` defaults to the current project directory name (basename of `git rev-parse --show-toplevel`, fallback to `pwd`). Override with `TICKET_FLOW_NOTIFY_TITLE=<name>` in the shell env for a custom notification group.
 
-4. Tab bleibt offen — User kann Output reviewen. KEIN Auto-Finish.
+4. Leave the tab open — the user can review output. NO auto-finish.
 
-**Standalone-Modus (KANBAN_ID nicht gesetzt):** Schritt 7 komplett überspringen. Klassischer Flow: User entscheidet selbst über /ticket-flow:finish.
+**Standalone mode (KANBAN_ID not set):** skip step 7 entirely. Classic flow: the user decides whether to run /ticket-flow:finish.
 
-## Subagent-Dispatch-Pattern (für Research-Items)
+## Subagent dispatch pattern (for research items)
 
-Wenn Item-Typ = "Research" (AC enthält "Research-Doku" o.ä.):
+If the item type = "research" (AC mentions "research doc" or similar):
 
-1. Plan in 2-4 unabhängige Recherche-Stränge teilen
-2. **Parallel dispatchen**: Ein einzelner Message mit mehreren `Agent`-Tool-Calls (subagent_type: `general-purpose` oder `Explore`)
-3. Jedem Subagent klaren, self-contained Prompt: was zu recherchieren, welche Quellen erwartet, Output unter 400 Wörtern
-4. Synthese: alle Ergebnisse in EIN Doc zusammenfassen (z.B. `docs/research/<topic>.md`)
-5. Niemals Subagent-Output blind übernehmen — kritisch prüfen, Quellen verifizieren
+1. Split the plan into 2–4 independent research strands
+2. **Dispatch in parallel**: a single message with multiple `Agent` tool calls (subagent_type: `general-purpose` or `Explore`)
+3. Give each subagent a clear, self-contained prompt: what to research, expected sources, output under 400 words
+4. Synthesis: combine all results into ONE doc (e.g. `docs/research/<topic>.md`)
+5. Never trust subagent output blindly — review critically, verify sources
 
-**Verbot**: bei Tasks die externe GUI-Tools brauchen (z.B. Hardware-bezogene GUI-Tools, manuelle Werkzeug-Arbeit) → KEINE Subagent-Dispatches. Stattdessen interaktive Single-Session-Begleitung.
+**Forbidden**: for tasks that need external GUI tools (e.g. hardware-related GUI tools, manual tooling work) → NO subagent dispatch. Use interactive single-session guidance instead.
 
-## Was es NICHT macht
+## What it doesn't do
 
-- /ticket-flow:pickup-Aufgaben (Worktree erstellen, Kanban-Move)
+- /ticket-flow:pickup tasks (create worktree, kanban move)
 - Deploy
-- Merge / Kanban-Move-to-Testing
+- Merge / kanban move to Testing
 
 → Phase 1 = `/ticket-flow:pickup`, Phase 3 = `/ticket-flow:finish`.

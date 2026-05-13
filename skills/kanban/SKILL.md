@@ -5,180 +5,178 @@ description: Use when a prompt contains a new bug/feature/change not yet tracked
 
 # Kanban
 
-Alle Pfade sind relativ zum Projekt-Root (cwd / git rev-parse --show-toplevel):
+All paths are relative to the project root (cwd / `git rev-parse --show-toplevel`):
 
-**Operative Board** (hot path): `KANBAN.md` — Inbox · Backlog · In Progress · Testing
-**Strategischer Plan**: `ROADMAP.md` — Epics + Später + Geparkt. Cold path, nur wenn strategisch relevant.
-**Archive**: `KANBAN-done.md` — nur bei explizitem Bedarf.
-**Spec-Template**: `docs/specs/SPEC-TEMPLATE.md` — Vorlage für Item-Specs.
+**Operational board** (hot path): `KANBAN.md` — Inbox · Backlog · In Progress · Testing
+**Strategic plan**: `ROADMAP.md` — epics + later + parked. Cold path, only when strategically relevant.
+**Archive**: `KANBAN-done.md` — only on explicit demand.
+**Spec template**: `docs/specs/SPEC-TEMPLATE.md` — template for item specs.
 
-**bd Sync (Pilot)**: Wenn `.beads/issues.jsonl` existiert, ist jede Kanban-Änderung auch in bd zu spiegeln (siehe Sektion **bd Sync** unten). Mapping `kanban# → DSP-id`: `.beads/kanban-bd-mapping.json`.
+**bd Sync (pilot)**: if `.beads/issues.jsonl` exists, every Kanban change is also mirrored in bd (see **bd Sync** section below). Mapping `kanban# → bd-id`: `.beads/kanban-bd-mapping.json`.
 
-## Workflow-Commands (Ticket-Flow)
+## Workflow commands (Ticket-Flow)
 
-| Command | Phase | Wirkung |
+| Command | Phase | Effect |
 |---|---|---|
-| `/ticket-flow:spec <id>` | Vor Backlog | Spec-Doc aus Template anlegen, Notiz auf `spec: drafting` |
-| `/ticket-flow:pickup <id>` | Phase 1 | Worktree + Branch-Lock + Move zu In Progress |
-| `/ticket-flow:implement` | Phase 2 | Plan ausführen (interaktiv oder Subagent-Dispatch) |
-| `/ticket-flow:finish` | Phase 3 | Review + Deploy + Merge + Move zu Testing |
-| `/ticket-flow:flow <id>` | Orchestrator | Phase 1→2→3 (Spawn-Mode) oder `--local` mit Checkpoints |
+| `/ticket-flow:spec <id>` | Pre-Backlog | Create a spec doc from template, set note to `spec: drafting` |
+| `/ticket-flow:pickup <id>` | Phase 1 | Worktree + branch lock + move to In Progress |
+| `/ticket-flow:implement` | Phase 2 | Execute the plan (interactive or subagent dispatch) |
+| `/ticket-flow:finish` | Phase 3 | Review + deploy + merge + move to Testing |
+| `/ticket-flow:flow <id>` | Orchestrator | Phase 1 → 2 → 3 (spawn mode) or `--local` with checkpoints |
 
-Direkt-Edit der Kanban (dieses Skill) wird weiterhin verwendet für: neue Items in Inbox erfassen, Roadmap-Updates, Testing → Done manuell verifizieren.
+Direct editing of the Kanban (this skill) is still used for: capturing new items in Inbox, roadmap updates, manually verifying Testing → Done.
 
-## Spalten
+## Columns
 
-| Spalte | Wer arbeitet hier | Bedingung |
+| Column | Who works here | Condition |
 |---|---|---|
-| 📥 Inbox | **NIE Agents** — User triagieren | Neu/zu klären, DoR nicht erfüllt |
-| 📋 Backlog | Agents picken hier (oberstes Item) | Priorisiert (= Reihenfolge!), DoR erfüllt |
-| 🔄 In Progress | Active work, WIP-Limit 1–3 | Mit `branch:`-Lock in Notiz |
+| 📥 Inbox | **NEVER agents** — users triage | New / to be clarified, DoR not met |
+| 📋 Backlog | Agents pick from here (topmost item) | Prioritized (= order!), DoR met |
+| 🔄 In Progress | Active work, WIP limit 1–3 | With `branch:` lock in the note |
 | 🧪 Testing | Awaiting verification | Deployed |
 
-## Aktionen
+## Actions
 
-| Trigger | Aktion KANBAN.md | bd-Call (wenn aktiv) |
+| Trigger | KANBAN.md action | bd call (when active) |
 |---------|------------------|----------------------|
-| Neuer Bug / Feature / Change | → KANBAN.md Inbox (DoR meist noch nicht erfüllt) | `bd create` + bd-id in Spalte eintragen + Mapping aktualisieren |
-| Neues strategisches Thema | → ROADMAP.md (Epic, Später, oder Geparkt) | — (Roadmap ist nicht in bd) |
-| Inbox-Item erfüllt DoR | → Backlog an die korrekte Prioritätsposition | `bd update <id> --remove-label inbox --add-label backlog` |
-| Agent picked Backlog-Item | `branch: <name>` in Notiz setzen → In Progress | `bd update <id> --remove-label backlog --add-label in-progress --status in_progress` |
-| Deployed / implementiert | → Testing | `bd update <id> --remove-label in-progress --add-label testing --status open` |
-| Verifiziert | Zeile entfernen + in KANBAN-done.md anhängen | `bd close <id> --reason "verified"` |
-| Roadmap-Item wird konkret | aus ROADMAP.md → KANBAN.md Inbox | `bd create` (siehe Zeile 1) |
-| Dependency erkannt | `blocked by: #X` in Notiz | `bd dep add <a> <b>` (a hängt von b ab) |
+| New bug / feature / change | → KANBAN.md Inbox (DoR usually not met yet) | `bd create` + write bd-id to the column + update mapping |
+| New strategic topic | → ROADMAP.md (epic, later, or parked) | — (roadmap is not in bd) |
+| Inbox item meets DoR | → Backlog at the right priority slot | `bd update <id> --remove-label inbox --add-label backlog` |
+| Agent picked Backlog item | Set `branch: <name>` in note → In Progress | `bd update <id> --remove-label backlog --add-label in-progress --status in_progress` |
+| Deployed / implemented | → Testing | `bd update <id> --remove-label in-progress --add-label testing --status open` |
+| Verified | Remove row + append to KANBAN-done.md | `bd close <id> --reason "verified"` |
+| Roadmap item becomes concrete | from ROADMAP.md → KANBAN.md Inbox | `bd create` (see row 1) |
+| Dependency identified | `blocked by: #X` in the note | `bd dep add <a> <b>` (a depends on b) |
 
 ## Definition of Ready (Inbox → Backlog)
 
-Genau die 5 Punkte aus KANBAN.md "Workflow-Regeln" anwenden:
+Exactly the 5 points from KANBAN.md "Workflow Rules":
 
-1. Tag gesetzt (`bug` · `change` · `feature`)
-2. Cluster-Marker im Titel, falls Cluster zutrifft
-3. **Spec vorhanden**:
-   - Bug / triviale Change → Akzeptanzkriterium inline im Titel/Notiz (1 Satz)
-   - Feature / größere Change → `[Spec](docs/specs/<id>-<slug>.md)` in Notiz
-4. Kein `blocked by: #X`
-5. Kein `decision: open`
+1. Tag set (`bug` · `change` · `feature`)
+2. Cluster marker in the title, if a cluster applies
+3. **Spec exists**:
+   - Bug / trivial change → acceptance criterion inline in the title/note (1 sentence)
+   - Feature / larger change → `[Spec](docs/specs/<id>-<slug>.md)` in the note
+4. No `blocked by: #X`
+5. No `decision: open`
 
-## Pickup-Regel (Agents)
+## Pickup rule (agents)
 
-1. Lies KANBAN.md
-2. Wähle das **oberste** Backlog-Item, das:
-   - DoR erfüllt
-   - Kein `branch:`-Lock in der Notiz
-3. Setze `branch: <name>` in die Notiz (Lock für parallele Worktrees)
-4. Verschiebe nach In Progress
+1. Read KANBAN.md
+2. Pick the **topmost** Backlog item that:
+   - meets DoR
+   - has no `branch:` lock in the note
+3. Set `branch: <name>` in the note (lock for parallel worktrees)
+4. Move to In Progress
 
-**Aus Inbox: NIEMALS direkt picken.** Inbox-Items zuerst durch DoR triagieren (User-Entscheidung).
+**From Inbox: NEVER pick directly.** Inbox items first need DoR triage (user decision).
 
 ## Format
 
 ```
-| {ID} | `{bd-id}` | `{tag}` | {Titel} | {Notiz} | {YYYY-MM-DD} |
+| {ID} | `{bd-id}` | `{tag}` | {title} | {note} | {YYYY-MM-DD} |
 ```
 
-- **ID**: höchste vorhandene + 1, **über KANBAN.md UND ROADMAP.md prüfen** (keine Doppel-IDs)
-- **bd-id**: aus `bd create`-Output (Format `DSP-xxx`). Bei `bd` nicht aktiv: `—`.
-- **Tags**: `bug` · `change` · `feature` (Item-Typ, kein Status)
-- **Datum**: Erstellungsdatum, nie ändern
+- **ID**: highest existing + 1, **check across KANBAN.md AND ROADMAP.md** (no duplicate IDs)
+- **bd-id**: from `bd create` output (format `<project>-xxx`, e.g. `PROJ-abc`). When bd is inactive: `—`.
+- **Tags**: `bug` · `change` · `feature` (item type, not status)
+- **Date**: creation date, never change it
 
-## Cluster-Marker
+## Cluster markers
 
-Aktive Cluster sind in `KANBAN.md` Tabelle "Aktive Cluster" definiert. Items bekommen den Marker als Prefix im Titel, in Backticks gerahmt:
+Active clusters are defined in `KANBAN.md` table "Active Clusters". Items get the marker as a prefix in the title, wrapped in backticks:
 
 ```
-`[mess-align]` Multipoint-Messung implementieren
-`[tauri-dist]` CORS-Origins eingrenzen
-`[ui]` Sidebar als Drawer
+`[mess-align]` Multipoint measurement
+`[tauri-dist]` Constrain CORS origins
+`[ui]` Sidebar as drawer
 ```
 
-Neuen Cluster? Erst die Tabelle in KANBAN.md updaten, dann den Marker setzen. Grepbar:
+New cluster? First update the table in KANBAN.md, then set the marker. Greppable:
 
 ```bash
 grep -E '\[mess-align\]|\[tauri-dist\]|\[ui\]' KANBAN.md ROADMAP.md
 ```
 
-## Notiz-Format (pipe-getrennt, grepbar)
+## Note format (pipe-separated, greppable)
 
 ```
 [Spec](url) · [Plan](url) · branch: feat/93 · blocks: #92 · blocked by: #27 · spec: pending
 ```
 
-Leere Notiz: `—`.
+Empty note: `—`.
 
-**Spec vs. Plan:**
-- **Spec** (`docs/specs/<id>-<slug>.md`): WAS soll erreicht werden — Context, Acceptance Criteria, Out of Scope, References. Item-spezifisch, Pflicht ab Feature/größere Change vor Backlog.
-- **Plan** (`docs/superpowers/plans/...`): WIE setzt man's um — Implementation-Strategie, Architektur-Skizze.
+**Spec vs. plan:**
+- **Spec** (`docs/specs/<id>-<slug>.md`): WHAT should be achieved — context, acceptance criteria, out of scope, references. Item-specific, mandatory for features / larger changes before Backlog.
+- **Plan** (`docs/superpowers/plans/...`): HOW to implement — implementation strategy, architecture sketch.
 
-**Status-Marker (Inbox-only):**
-- `spec: pending` — niemand kümmert sich
-- `spec: drafting (<wer>)` — wird gerade geschrieben
-- `decision: open` — Umsetzung nicht entschieden
+**Status markers (Inbox-only):**
+- `spec: pending` — nobody is on it
+- `spec: drafting (<who>)` — currently being written
+- `decision: open` — implementation not decided
 
-## Bug-Log / Plan / Spec
+## Bug log / plan / spec
 
-| Typ | Pfad | Wann |
-|-----|------|------|
-| Spec | `docs/specs/{ID}-titel.md` | Feature / größere Change vor Backlog (DoR-Punkt 3) |
-| Bug-Log | `docs/kanban/{ID}-titel.md` | Bei mehreren Hypothesen, algorithmischem Fix, Regression |
-| Plan | `docs/superpowers/plans/` | Implementation-Strategie für Features / grössere Changes |
+| Type | Path | When |
+|------|------|------|
+| Spec | `docs/specs/{ID}-title.md` | Feature / larger change before Backlog (DoR point 3) |
+| Bug log | `docs/kanban/{ID}-title.md` | When multiple hypotheses, algorithmic fix, regression |
+| Plan | `docs/superpowers/plans/` | Implementation strategy for features / larger changes |
 
-**Nicht anlegen**: offensichtlicher 1-Zeilen-Fix.
+**Do not create**: obvious one-line fix.
 
-## Vorgehen
+## Approach
 
-1. `Read` KANBAN.md (Hot Path). ROADMAP.md nur wenn strategisch relevant oder Cluster-Lookup.
-2. Triagieren: Inbox (DoR fehlt) vs. Backlog (DoR erfüllt) vs. Roadmap (strategisch).
-3. Minimale Änderung — nur was sich geändert hat.
-4. Notiz im pipe-Format halten.
-5. Cluster-Marker setzen, falls passend.
-6. Bei Bug-Log / Spec / Plan: anlegen + verlinken.
-7. **bd-Sync** (wenn aktiv): passenden bd-Call aus Aktionen-Tabelle ausführen (siehe Sektion **bd Sync** unten).
-8. Kurze Erwähnung im Response: `📋 Kanban: #70 → Testing · bd: DSP-cbw closed`
+1. `Read` KANBAN.md (hot path). ROADMAP.md only if strategically relevant or for cluster lookup.
+2. Triage: Inbox (DoR missing) vs. Backlog (DoR met) vs. Roadmap (strategic).
+3. Minimal change — only what changed.
+4. Keep the note in pipe format.
+5. Set cluster markers where appropriate.
+6. For bug log / spec / plan: create + link.
+7. **bd sync** (when active): run the matching bd call from the actions table (see **bd Sync** section below).
+8. Short mention in the response: `📋 Kanban: #70 → Testing · bd: PROJ-cbw closed`
 
-**Nicht updaten**: rein informative Aufgabe (Frage, Erklärung) oder Item bereits im richtigen Status.
+**Do not update**: purely informational task (question, explanation) or item already at the right status.
 
 ## bd Sync
 
-Wenn `.beads/issues.jsonl` existiert (Pilot aktiv):
+When `.beads/issues.jsonl` exists (pilot active):
 
-**Neues Item anlegen:**
+**Create a new item:**
 ```bash
 bd create \
-  --title "<Volltitel inkl. [cluster]-Marker>" \
-  --description "<Notiz oder '(no notes)'>" \
+  --title "<full title including [cluster] marker>" \
+  --description "<note or '(no notes)'>" \
   --type bug|task|feature \
   --priority 4 \
   --label kanban-<N> \
   --label inbox \
-  --label cluster-<marker>   # falls Cluster
+  --label cluster-<marker>   # if a cluster applies
 ```
-Output liefert `id` (z.B. `DSP-abc`). bd-id in `.beads/kanban-bd-mapping.json` eintragen UND in der KANBAN.md `bd`-Spalte als ``DSP-abc``.
+The output provides an `id` (e.g. `PROJ-abc`). Write the bd-id into `.beads/kanban-bd-mapping.json` AND into the KANBAN.md `bd` column as `` `PROJ-abc` ``.
 
-**Spalten-Wechsel** (Inbox/backlog/in-progress/testing-Label updaten):
+**Column move** (update inbox/backlog/in-progress/testing labels):
 ```bash
-bd update <bd-id> --remove-label <alt> --add-label <neu>
-# Bei In Progress zusätzlich: --status in_progress
-# Bei Testing zurück: --status open
+bd update <bd-id> --remove-label <old> --add-label <new>
+# For In Progress also: --status in_progress
+# For Testing back: --status open
 ```
 
-**Schließen** (Move nach Done):
+**Close** (move to Done):
 ```bash
 bd close <bd-id> --reason "verified"
 ```
 
 **Dependency**:
 ```bash
-bd dep add <a-bd-id> <b-bd-id>   # a hängt von b ab
+bd dep add <a-bd-id> <b-bd-id>   # a depends on b
 ```
 
-**Ready-Check** (was kann angefangen werden?):
+**Ready check** (what can be started?):
 ```bash
 bd ready
 ```
 
-**Mapping-Datei aktuell halten**: Bei jedem `bd create` einen Eintrag in `.beads/kanban-bd-mapping.json` ergänzen (`"N": "DSP-abc"`).
+**Keep the mapping file current**: on every `bd create` add an entry to `.beads/kanban-bd-mapping.json` (`"N": "PROJ-abc"`).
 
-**Sandbox**: bd-Aufrufe brauchen `dangerouslyDisableSandbox: true` weil bd zur localen Dolt-DB schreibt. Warning `beads.role not configured` ist harmlos.
-
-**Pilot-Kontext + Re-Enable / Full-Disable**: `docs/research/beads-rollback-inventory.md`
+**Sandbox**: bd calls need `dangerouslyDisableSandbox: true` because bd writes to the local Dolt DB. The `beads.role not configured` warning is harmless.

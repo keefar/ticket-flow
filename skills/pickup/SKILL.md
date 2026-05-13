@@ -11,68 +11,68 @@ Examples:
 - `/ticket-flow:pickup 92` → branch `change/92-sidebar-drawer`
 - `/ticket-flow:pickup 94 multipoint` → branch `feature/94-multipoint`
 
-## Was es macht
+## What it does
 
-1. Validiert dass Item in Backlog ist und DoR erfüllt
-2. Erstellt Worktree (via `superpowers:using-git-worktrees`)
-3. Setzt `branch:`-Lock in KANBAN.md Notiz
-4. Verschiebt Item Backlog → In Progress
-5. Sucht oder scaffoldet Plan-Doc unter `docs/superpowers/plans/`
+1. Validates that the item is in Backlog and DoR is met
+2. Creates a worktree (via `superpowers:using-git-worktrees`)
+3. Sets a `branch:` lock in the KANBAN.md note
+4. Moves item Backlog → In Progress
+5. Looks for or scaffolds a plan doc under `docs/superpowers/plans/`
 
-## Schritte
+## Steps
 
-### 1. Item aus KANBAN.md auslesen
+### 1. Read item from KANBAN.md
 
 ```bash
 grep -nE "^\| ${id} \|" KANBAN.md
 ```
 
-- Wenn nicht gefunden: Fehler — "Item #${id} nicht im Kanban"
-- Wenn in Inbox: Fehler — "Item ist in Inbox, nicht ready. DoR erfüllen (Spec schreiben, Decision klären) und nach Backlog ziehen."
-- Wenn in In Progress: Fehler — "Item ist schon In Progress. Prüfe `branch:`-Marker."
-- Wenn in Testing/Done: Fehler — "Item ist bereits abgeschlossen."
+- Not found: error — "Item #${id} not in Kanban"
+- In Inbox: error — "Item is in Inbox, not ready. Meet DoR (write spec, resolve decision) and move to Backlog."
+- In In Progress: error — "Item is already In Progress. Check the `branch:` marker."
+- In Testing/Done: error — "Item is already completed."
 
-### 2. DoR validieren (für Backlog-Items)
+### 2. Validate DoR (for Backlog items)
 
-- Tag muss `bug`, `change` oder `feature` sein
-- Notiz darf kein `spec: pending`, `decision: open`, `blocked by:` enthalten
-- Für `feature` oder größere `change`: Notiz muss `[Spec](docs/specs/...)` enthalten — sonst Warnung anzeigen aber nicht abbrechen (User-Override möglich)
+- Tag must be `bug`, `change`, or `feature`
+- Note must not contain `spec: pending`, `decision: open`, or `blocked by:`
+- For `feature` or larger `change`: the note must contain `[Spec](docs/specs/...)` — otherwise warn but do not abort (user-override possible)
 
-### 3. Branch-Name bauen
+### 3. Build the branch name
 
-- Bei EnterWorktree: `name = <id>-<slug>` (Tool prependet `worktree-`), tatsächlicher Branch = `worktree-<id>-<slug>`
-- Bei Fallback (manuelles `git worktree add`): `<tag>/<id>-<slug>` möglich (z.B. `feature/94-multipoint-messung`)
-- Slug: aus Item-Titel (cluster-marker entfernen, max 30 Zeichen, dasselbe Slugify-Verfahren wie /spec)
-- Falls Branch-Suffix-Arg gegeben: `<id>-<suffix>` verwenden
+- With EnterWorktree: `name = <id>-<slug>` (the tool prepends `worktree-`), actual branch = `worktree-<id>-<slug>`
+- Fallback (manual `git worktree add`): `<tag>/<id>-<slug>` is possible (e.g. `feature/94-multipoint-messung`)
+- Slug: from the item title (strip cluster marker, max 30 chars, same slugify rules as /spec)
+- If a branch-suffix arg was given: use `<id>-<suffix>`
 
-### 4. Worktree erstellen
+### 4. Create the worktree
 
-**Bevorzugt: native `EnterWorktree`-Tool** (Claude-Code-Harness).
-- Pass nur den `<id>-<slug>`-Teil als `name` (z.B. `name="94-multipoint-messung"`).
-- Tool prependet automatisch `worktree-` und schreibt nach `.claude/worktrees/<name>/`.
-- Tatsächlicher Branch-Name: `worktree-<id>-<slug>` — **diesen** in Notiz speichern, nicht den geplanten `<tag>/<id>-<slug>` (Konvention-Mismatch wurde im ersten Live-Test entdeckt).
+**Preferred: native `EnterWorktree` tool** (Claude Code harness).
+- Pass only the `<id>-<slug>` portion as `name` (e.g. `name="94-multipoint-messung"`).
+- The tool automatically prepends `worktree-` and writes to `.claude/worktrees/<name>/`.
+- Actual branch name: `worktree-<id>-<slug>` — store **this** in the note, not the planned `<tag>/<id>-<slug>` (convention mismatch was caught in the first live test).
 
-**Fallback nur falls EnterWorktree nicht verfügbar**: `Skill(superpowers:using-git-worktrees)` + manueller `git worktree add`. WARNUNG:
-- Auf macOS Sequoia (15.x): `com.apple.provenance` xattr auf Files unter `.claude/agents/` und `.mcp.json` blockt `git worktree add` mit "Operation not permitted" — selbst mit `dangerouslyDisableSandbox: true`. Workaround: `xattr -d com.apple.provenance ...` ist nicht ausreichend; EnterWorktree umgeht das Problem.
+**Fallback only if EnterWorktree is unavailable**: `Skill(superpowers:using-git-worktrees)` + manual `git worktree add`. WARNING:
+- On macOS Sequoia (15.x): the `com.apple.provenance` xattr on files under `.claude/agents/` and `.mcp.json` blocks `git worktree add` with "Operation not permitted" — even with `dangerouslyDisableSandbox: true`. Workaround: `xattr -d com.apple.provenance ...` is insufficient; EnterWorktree avoids the issue.
 
-**Base-Ref-Hinweis**: EnterWorktree default branched von `origin/<default-branch>` — bei aktiver Feature-Branch (z.B. `tauri-prototype`) muss `worktree.baseRef = "head"` in settings.json gesetzt sein, sonst geht alles seit dem letzten Main-Sync verloren.
+**Base ref note**: EnterWorktree defaults to branching from `origin/<default-branch>` — when working on an active feature branch (e.g. `tauri-prototype`), set `worktree.baseRef = "head"` in settings.json or everything since the last main sync is lost.
 
-### 5. KANBAN.md aktualisieren
+### 5. Update KANBAN.md
 
-- **Notiz**: `branch: <branch>` als Pipe-Feld einfügen (vor evtl. anderen Markers)
-- **Section**: Item aus Backlog-Tabelle entfernen, in In Progress-Tabelle einfügen (an erster Stelle oder per Datum)
-- Pipe-Format beibehalten, Reihenfolge: `[Spec] · [Plan] · branch: · blocks: · blocked by:`
+- **Note**: insert `branch: <branch>` as a pipe sub-field (before any other markers)
+- **Section**: remove the item from the Backlog table, insert into the In Progress table (top, or by date)
+- Keep the pipe format. Order: `[Spec] · [Plan] · branch: · blocks: · blocked by:`
 
-### 6. Plan-Doc
+### 6. Plan doc
 
-Existierender Plan-Link in Notiz? → Pfad ausgeben, **keinen neuen Plan anlegen**.
+Existing plan link in the note? → print the path, **do not create a new plan**.
 
-Kein Plan? → Optionen reporten:
-- (a) Plan inline im Item-Titel reicht (für triviale Bugs) — weiter zu /implement
-- (b) `Skill(superpowers:writing-plans)` aufrufen für strukturierten Plan
-- (c) Manuell `docs/superpowers/plans/<date>-<slug>.md` anlegen
+No plan? → report options:
+- (a) inline plan in the item title is enough (for trivial bugs) — proceed to /implement
+- (b) invoke `Skill(superpowers:writing-plans)` for a structured plan
+- (c) manually create `docs/superpowers/plans/<date>-<slug>.md`
 
-Im Zweifel: User fragen.
+When in doubt: ask the user.
 
 ### 7. Report
 
@@ -80,27 +80,27 @@ Im Zweifel: User fragen.
 📋 Kanban: #<id> → In Progress
 Branch: <branch>
 Worktree: <path>
-Plan: <plan-path> (oder "nicht vorhanden — siehe Empfehlungen oben")
+Plan: <plan-path> (or "not present — see recommendations above")
 
-Nächste Schritte:
+Next steps:
 1. cd <worktree>
-2. Plan überprüfen/finalisieren (falls noch nicht vorhanden)
-3. `/ticket-flow:implement` ausführen
+2. Review/finalize the plan (if not present yet)
+3. Run `/ticket-flow:implement`
 ```
 
-## Edge Cases
+## Edge cases
 
-- **Item ist in Roadmap, nicht Kanban**: Fehler — "Item ist strategisch (Roadmap), erst nach Kanban Inbox triagieren"
-- **Worktree-Dir existiert nicht** (.worktrees/): `using-git-worktrees`-Skill handhabt das (asks user)
-- **Branch existiert schon**: Skill meldet Fehler, /pickup bricht ab
-- **Spec fehlt für Feature**: Warnung, nicht Abbruch — User kann fortfahren wenn er weiß was er tut
-- **Pre-existing dirty files im Main-Repo**: Worktree-Skill handhabt das (warning aber kein Block, weil Worktree isoliert ist)
+- **Item is in Roadmap, not Kanban**: error — "Item is strategic (Roadmap), triage into Kanban Inbox first"
+- **Worktree dir does not exist** (.worktrees/): the `using-git-worktrees` skill handles it (asks the user)
+- **Branch already exists**: the skill reports an error, /pickup aborts
+- **Spec missing for a feature**: warning, not abort — the user can proceed if they know what they're doing
+- **Pre-existing dirty files in the main repo**: the worktree skill handles it (warning but no block, since the worktree is isolated)
 
-## Was es NICHT macht
+## What it doesn't do
 
-- Plan schreiben (das ist Aufgabe von `writing-plans` Skill oder User)
-- Code-Änderungen
+- Write the plan (that's the job of `writing-plans` or the user)
+- Code changes
 - Deploy
 - Reviews
 
-→ Phase 2 (`/ticket-flow:implement`) und Phase 3 (`/ticket-flow:finish`) sind separate Skills.
+→ Phase 2 (`/ticket-flow:implement`) and Phase 3 (`/ticket-flow:finish`) are separate skills.

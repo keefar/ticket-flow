@@ -30,9 +30,12 @@ assert_contains() {
 }
 
 setup() {
-  # /tmp/claude ist im Claude-Bash zuverlässig schreibbar (siehe ~/.claude/CLAUDE.md Sandbox-Leitlinien)
+  # /tmp/claude is reliably writable in Claude's bash sandbox.
   mkdir -p /tmp/claude 2>/dev/null
   TMPDIR_TEST="$(mktemp -d -p /tmp/claude 2>/dev/null || mktemp -d)"
+  # spawn-ghostty.sh now gates on $TERM_PROGRAM=ghostty (portability pass #1);
+  # tests need it set so the happy paths reach the AppleScript stage.
+  export TERM_PROGRAM="ghostty"
   # fake worktree: dir with a .git file (worktree marker)
   WORKTREE="$TMPDIR_TEST/wt-99-fake"
   mkdir -p "$WORKTREE"
@@ -296,6 +299,31 @@ test_return_outside_tell() {
   teardown
 }
 
+# Test 14: #1 — non-Ghostty terminal is refused before any AppleScript runs
+test_rejects_non_ghostty_terminal() {
+  setup
+  local out exit_code
+  out="$(TERM_PROGRAM="iTerm.app" REPO_ROOT="$REPO_ROOT_OVERRIDE" "$SCRIPT" "$WORKTREE" "99" 2>&1)"
+  exit_code=$?
+  if [[ $exit_code -ne 0 ]]; then
+    PASS=$((PASS+1))
+  else
+    FAIL=$((FAIL+1))
+    FAILED_TESTS+=("non-Ghostty terminal should exit non-zero, got $exit_code")
+  fi
+  assert_contains "requires Ghostty" "$out" "non-Ghostty terminal error mentions Ghostty"
+  assert_contains "iTerm.app" "$out" "non-Ghostty terminal error reports detected terminal"
+  assert_contains "--local" "$out" "non-Ghostty terminal error suggests --local"
+  # AppleScript must NOT have been invoked
+  if [[ ! -f "$TMPDIR_TEST/osascript-calls.log" ]]; then
+    PASS=$((PASS+1))
+  else
+    FAIL=$((FAIL+1))
+    FAILED_TESTS+=("terminal-check should fail before osascript is invoked")
+  fi
+  teardown
+}
+
 test_happy_path
 test_missing_worktree
 test_not_a_worktree
@@ -309,6 +337,7 @@ test_pre_launches_ghostty_in_background
 test_restore_after_input_text
 test_single_restore_block
 test_return_outside_tell
+test_rejects_non_ghostty_terminal
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="

@@ -5,50 +5,50 @@ description: Phase 3 of Ticket-Flow — review, optional deploy, merge branch ba
 
 # /ticket-flow:finish — Phase 3 of Ticket-Flow
 
-**Args**: keine — operiert im aktuellen Worktree, leitet Item via `branch:`-Marker aus Haupt-Repo KANBAN.md ab.
+**Args**: none — operates in the current worktree, derives the item via the `branch:` marker in the main repo's KANBAN.md.
 
-## Voraussetzung
+## Prerequisites
 
-- /ticket-flow:implement abgeschlossen (alle AC erfüllt, Commits gemacht)
-- Aktuelles Verzeichnis = Worktree
-- Typecheck/Tests grün
+- /ticket-flow:implement is complete (all ACs met, commits made)
+- Current directory = worktree
+- Typecheck/tests green
 
-## Schritte
+## Steps
 
-### 1. Item identifizieren
+### 1. Identify the item
 
-Wie in `/ticket-flow:implement`: aktuellen Branch lesen, KANBAN.md (Haupt-Repo) durchsuchen nach `branch: <branch>` in In Progress.
+Same as `/ticket-flow:implement`: read the current branch, search KANBAN.md (main repo) for `branch: <branch>` in In Progress.
 
-- ID, Titel, Tag, Spec/Plan-Links extrahieren
+- Extract ID, title, tag, spec/plan links
 
-### 2. Final Verification
+### 2. Final verification
 
-Vor Merge:
-- Projekt-Typecheck (z.B. `pnpm typecheck`, `tsc --noEmit`, `cargo check`) — muss grün sein
-- Test-Suite des Projekts laufen lassen — muss grün sein
-- Bei UI-Changes: `Skill(superpowers:verification-before-completion)` — fordert echte Browser-Verifikation, nicht nur Code-Check
-- Bei Spec mit AC: alle AC durchgehen, bestätigen dass erfüllt
+Before merge:
+- Project typecheck (e.g. `pnpm typecheck`, `tsc --noEmit`, `cargo check`) — must be green
+- Run the project's test suite — must be green
+- For UI changes: `Skill(superpowers:verification-before-completion)` — requires real browser verification, not just a code check
+- For specs with ACs: walk through each AC, confirm it's met
 
-### 3. Review (optional, je nach Item-Größe)
+### 3. Review (optional, depending on item size)
 
-- Triviale Bugs/Changes (≤50 Zeilen, einfacher Fix): kein expliziter Review-Step
-- Features oder größere Changes: `Skill(superpowers:requesting-code-review)` — strukturierter Self-Review oder /ultrareview falls von User getriggert
+- Trivial bugs/changes (≤50 lines, simple fix): no explicit review step
+- Features or larger changes: `Skill(superpowers:requesting-code-review)` — structured self-review or /ultrareview if the user triggers it
 
-User entscheidet bei Unsicherheit.
+User decides if unsure.
 
-### 4. Deploy (projekt-abhängig)
+### 4. Deploy (project-specific)
 
-Wenn das Projekt einen `deploy`-Skill oder vergleichbare Build/Deploy-Pipeline hat und der Change deploy-relevante Files berührt:
-- `Skill(deploy)` ausführen (Projekt-Skill — Plugin selbst bringt keinen mit)
-- Bei Failure: stoppen, debuggen, NICHT mergen
+If the project has a `deploy` skill or a similar build/deploy pipeline and the change touches deploy-relevant files:
+- Invoke `Skill(deploy)` (project-owned skill — the plugin doesn't ship one)
+- On failure: stop, debug, do NOT merge
 
-Ist kein Deploy-Skill da oder der Change rein dokumentativ: überspringen.
+If there is no deploy skill or the change is documentation-only: skip.
 
-### 5. Merge nach main
+### 5. Merge to main
 
-Skill-Delegation: `Skill(superpowers:finishing-a-development-branch)` für sauberen Merge-Workflow (FF/squash/rebase je nach Branch-Charakter).
+Skill delegation: `Skill(superpowers:finishing-a-development-branch)` for a clean merge workflow (FF/squash/rebase depending on branch character).
 
-Falls Skill-Override gewünscht (Single-Commit-Squash bei trivialen Items):
+Override (single-commit squash for trivial items):
 ```bash
 cd <main-repo>
 git merge --squash <branch>
@@ -57,69 +57,69 @@ git worktree remove <worktree-path>
 git branch -d <branch>
 ```
 
-### 6. KANBAN.md aktualisieren
+### 6. Update KANBAN.md
 
-- Item aus **In Progress** entfernen
-- In **Testing** einfügen (an erster Stelle)
-- Notiz aktualisieren: `branch:`-Marker entfernen
-- Bei Spec-Update: `spec: drafting` → entfernen (Spec ist jetzt approved/lebendig im Code)
+- Remove the item from **In Progress**
+- Insert into **Testing** (top)
+- Update the note: remove the `branch:` marker
+- On spec update: remove `spec: drafting` (the spec is now approved/lives in the code)
 
-Plus, falls Bug-Log nötig (mehrere Hypothesen, algorithmischer Fix, Regression) und noch nicht da: `docs/kanban/<id>-titel.md` (oder Projekt-Pendant) anlegen + verlinken.
+Plus, if a bug log is warranted (multiple hypotheses, algorithmic fix, regression) and not yet present: create `docs/kanban/<id>-title.md` (or the project's equivalent) + link it.
 
 ### 7. Worktree cleanup
 
-Wenn Skill-Delegation nicht schon erledigt:
+If the merge skill didn't already do it:
 ```bash
 git worktree remove <worktree-path>
-git branch -d <branch>  # local cleanup, falls remote schon weg
+git branch -d <branch>  # local cleanup if the remote is already gone
 ```
 
-**WICHTIG**: Worktree-Remove schlägt fehl mit "Operation not permitted" wenn die aktuelle Session in dem Worktree-Verzeichnis lebt (Process kann sein eigenes cwd nicht löschen). Im /ticket-flow:flow-Lauf von einer Worktree-Session aus → Cleanup auf **separate, frische Session** vertagen.
+**IMPORTANT**: `git worktree remove` fails with "Operation not permitted" if the current session lives in the worktree directory (the process can't delete its own cwd). When running `/ticket-flow:flow` from a worktree session → defer cleanup to a **fresh** separate session.
 
-Hinweisstring im Report falls Worktree-Cleanup vertagt:
+Report hint when cleanup is deferred:
 
 ```
-⚠️ Worktree-Cleanup blockiert (Session ist im Worktree-cwd). Manuell von
-fresh terminal/session aus:
+⚠️ Worktree cleanup blocked (session is in the worktree cwd). Run manually
+from a fresh terminal/session:
   git worktree remove --force .claude/worktrees/<name>
   git branch -D worktree-<name>
 ```
 
 ### 8. Report
 
-Standard-Report (immer):
+Standard report (always):
 
 ```
-✓ Phase 3 für #<id> abgeschlossen
+✓ Phase 3 for #<id> complete
 
 Merge: <commit-hash>
-Deploy: <version> (falls UI-Change)
+Deploy: <version> (if a UI change)
 Kanban: #<id> → Testing
-Worktree entfernt: <path>
+Worktree removed: <path>
 
-Manueller Test auf Pi steht aus. Bei Verifizierung manuell:
-- KANBAN.md: Item aus Testing entfernen, in KANBAN-done.md anhängen
-- ggf. Bug-Log anlegen für Lessons-Learned
+Manual test pending. After manual verification:
+- KANBAN.md: remove the item from Testing, append to KANBAN-done.md
+- Optional: create a bug log for lessons learned
 ```
 
-### 9. Spawn-Mode Status + Notification (nur wenn `KANBAN_ID` Env-Var gesetzt)
+### 9. Spawn-mode status + notification (only when `KANBAN_ID` env var is set)
 
-`KANBAN_ID` ist gesetzt wenn diese Session via `spawn-ghostty.sh` aus `/ticket-flow:flow` gestartet wurde (oder von `/ticket-flow:implement` durchgereicht). Sonst überspringen.
+`KANBAN_ID` is set when this session was started via `spawn-ghostty.sh` from `/ticket-flow:flow` (or passed through from `/ticket-flow:implement`). Otherwise skip.
 
-**Bei Finish-Erfolg:**
+**On finish success:**
 
-1. Tab-Titel auf `🟢 #<id> <short-name>` setzen (sofortiges visuelles Status-Feedback im Ghostty-Tab):
+1. Set the tab title to `🟢 #<id> <short-name>` (immediate visual status feedback in the Ghostty tab):
 
    ```bash
-   # VOR Schritt 7 (Worktree-Cleanup) auflösen — danach ist cwd ggf. ungültig.
+   # Resolve BEFORE step 7 (worktree cleanup) — afterwards cwd may be invalid.
    REPO="$(git rev-parse --path-format=absolute --git-common-dir)" && REPO="$(dirname "$REPO")"
    "${CLAUDE_PLUGIN_ROOT}/skills/flow/set-tab-title.sh" \
      "$("${CLAUDE_PLUGIN_ROOT}/skills/flow/format-tab-title.sh" done "$KANBAN_ID")"
    ```
 
-   `format-tab-title.sh` derived den Short-Name aus dem Branch-Slug. `flow-wrap.sh` setzt nach Claude-Exit nochmal final aus dem Status-File (belt-and-suspenders).
+   `format-tab-title.sh` derives the short name from the branch slug. `flow-wrap.sh` sets the final title from the status file after Claude exits (belt-and-suspenders).
 
-2. Status-File `.claude/impl-status/$KANBAN_ID.json` aktualisieren — `status: "done"`, `finished_at: <now>`. `$REPO` wurde oben bereits aufgelöst.
+2. Update the status file `.claude/impl-status/$KANBAN_ID.json` — `status: "done"`, `finished_at: <now>`. `$REPO` was already resolved above.
 
    ```bash
    STATUS_FILE="$REPO/.claude/impl-status/${KANBAN_ID}.json"
@@ -130,16 +130,16 @@ Manueller Test auf Pi steht aus. Bei Verifizierung manuell:
    fi
    ```
 
-3. macOS-Notification:
+3. macOS notification:
 
    ```bash
    NOTIFY_TITLE="${TICKET_FLOW_NOTIFY_TITLE:-$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")}"
-   osascript -e "display notification \"✓ #${KANBAN_ID} deployed + auf Testing\" with title \"$NOTIFY_TITLE\" sound name \"Glass\""
+   osascript -e "display notification \"✓ #${KANBAN_ID} deployed + on Testing\" with title \"$NOTIFY_TITLE\" sound name \"Glass\""
    ```
 
-   `$NOTIFY_TITLE` defaults to the current project directory name (basename of `git rev-parse --show-toplevel`, fallback to `pwd`). Override with `TICKET_FLOW_NOTIFY_TITLE=<name>` in shell env for a custom notification group.
+   `$NOTIFY_TITLE` defaults to the current project directory name (basename of `git rev-parse --show-toplevel`, fallback to `pwd`). Override with `TICKET_FLOW_NOTIFY_TITLE=<name>` in the shell env for a custom notification group.
 
-4. Spawn-Tab self-close (Tab-UUID aus Status-File):
+4. Spawn-tab self-close (tab UUID from status file):
 
    ```bash
    TAB_UUID="$(jq -r '.tab_uuid // empty' "$STATUS_FILE" 2>/dev/null)"
@@ -148,35 +148,35 @@ Manueller Test auf Pi steht aus. Bei Verifizierung manuell:
    fi
    ```
 
-   AppleScript-initiated close bypasses Ghostty's `confirm-close-surface` prompt. Terminating the tab kills the Claude session inside (SIGHUP); flow-wrap.sh's title-post-step won't run, but the title was already set in step 1. Status-File ist bereits `done`, Pre-Spawn-Cleanup im nächsten /ticket-flow:flow räumt Worktree+Branch+Status-File auf.
+   The AppleScript-initiated close bypasses Ghostty's `confirm-close-surface` prompt. Closing the tab kills the Claude session inside (SIGHUP); flow-wrap.sh's title post-step won't run, but the title was already set in step 1. The status file is already `done`; the pre-spawn cleanup in the next `/ticket-flow:flow` removes worktree + branch + status file.
 
-   Falls AppleScript blockt (Permission Revoked nach Spawn): nicht fatal — Tab bleibt offen (Bookkeeping in Status-File ist sauber), Pre-Spawn-Cleanup im nächsten /ticket-flow:flow holt das Tab-Close nach.
+   If AppleScript is blocked (permission revoked after spawn): non-fatal — the tab stays open (bookkeeping in the status file stays clean), and the next `/ticket-flow:flow`'s pre-spawn cleanup catches up on the tab close.
 
-**Bei Finish-Fehler** (Typecheck rot, Deploy fail, Merge-Konflikt):
+**On finish failure** (typecheck red, deploy fails, merge conflict):
 
-1. Tab-Titel auf `🔴 #<id> <short-name>` setzen:
+1. Set the tab title to `🔴 #<id> <short-name>`:
 
    ```bash
    "${CLAUDE_PLUGIN_ROOT}/skills/flow/set-tab-title.sh" \
      "$("${CLAUDE_PLUGIN_ROOT}/skills/flow/format-tab-title.sh" error "$KANBAN_ID")"
    ```
 
-2. Status-File auf `status: "error"` mit `error_message` (siehe Implement-Skill für jq-Pattern).
-3. Notification: `❌ Finish #<id> fehlgeschlagen — siehe Tab` mit Sound `Basso`.
-4. KEIN Auto-Rollback. Worktree bleibt für manuelle Inspektion.
-5. **KEIN Tab-Close** — Tab bleibt offen, User kann Output reviewen. Pre-Spawn-Cleanup im nächsten /ticket-flow:flow erkennt `status: error` und überspringt das Aufräumen, surfaced den Fall aber für den User.
+2. Set the status file to `status: "error"` with `error_message` (see the implement skill for the jq pattern).
+3. Notification: `❌ Finish #<id> failed — see tab` with sound `Basso`.
+4. NO auto rollback. The worktree stays for manual inspection.
+5. **NO tab close** — the tab stays open, the user can review output. The next `/ticket-flow:flow`'s pre-spawn cleanup detects `status: error`, skips cleanup, and surfaces the case to the user.
 
-**Standalone-Modus (KANBAN_ID nicht gesetzt):** Schritt 9 komplett überspringen.
+**Standalone mode (KANBAN_ID not set):** skip step 9 entirely.
 
-## Edge Cases
+## Edge cases
 
-- **Typecheck/Test rot**: Merge abbrechen, User informieren, zurück zu /ticket-flow:implement
-- **Deploy schlägt fehl**: Skill-Output reporten, nicht mergen, User entscheidet ob weiter debuggen oder zurückrollen
-- **Merge-Konflikt**: NICHT mit `--no-verify` umgehen. Konflikt sauber auflösen oder zurück zum User
-- **Item nicht in In Progress**: Fehler — "Item ist nicht In Progress. /ticket-flow:pickup oder /ticket-flow:implement zuerst."
-- **Branch nicht ahead of main**: Warnung — "Branch hat keine neuen Commits. Wirklich finishen?"
+- **Typecheck/test red**: abort the merge, inform the user, back to /ticket-flow:implement
+- **Deploy fails**: report the skill output, do not merge, the user decides whether to debug further or roll back
+- **Merge conflict**: do NOT bypass with `--no-verify`. Resolve the conflict cleanly or hand back to the user
+- **Item not In Progress**: error — "Item is not In Progress. Run /ticket-flow:pickup or /ticket-flow:implement first."
+- **Branch not ahead of main**: warning — "Branch has no new commits. Really finish?"
 
-## Was es NICHT macht
+## What it doesn't do
 
-- Implementation (Phase 2)
-- "Done"-Marker setzen (echtes Testing auf Pi muss manuell verifiziert werden, dann erst manuell → KANBAN-done.md)
+- Implementation (phase 2)
+- Set the "done" marker (real testing on the target must be manually verified, then manually moved to KANBAN-done.md)
