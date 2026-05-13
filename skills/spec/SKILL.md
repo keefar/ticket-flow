@@ -31,7 +31,7 @@ Examples:
 3. **Slug bauen**:
    - Title in lowercase, Umlaute mappen (ä→a, ö→o, ü→u, ß→ss), alle Sonderzeichen → `-`, multiple `-` → single `-`, Anfangs-/End-`-` entfernen
    - Max 50 Zeichen, im Wort-Boundary abschneiden
-   - Beispiele: "Multipoint-Messung implementieren" → `multipoint-messung-implementieren`; "DSP-Rework + Universal9-EQ16-Profile-Design" → `dsp-rework-universal9-eq16-profile-design`
+   - Beispiele: "Add user authentication" → `add-user-authentication`; "Refactor session-token-storage layer" → `refactor-session-token-storage-layer`
 4. **Target-Pfad**: `docs/specs/${id}-${slug}.md`. Wenn File bereits existiert → Fehler ("Spec existiert bereits: <Pfad>") und kein KANBAN-Update.
 5. **Template lesen**: `Read` von `docs/specs/SPEC-TEMPLATE.md`.
 6. **Frontmatter füllen** (alle Werte verbatim aus extrahierten Feldern):

@@ -120,8 +120,11 @@ Skill(ticket-flow:finish)
 3. macOS-Notification:
 
    ```bash
-   osascript -e "display notification \"❌ Implement #${KANBAN_ID} fehlgeschlagen — siehe Tab\" with title \"DSP Flow\" sound name \"Basso\""
+   NOTIFY_TITLE="${TICKET_FLOW_NOTIFY_TITLE:-$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")}"
+   osascript -e "display notification \"❌ Implement #${KANBAN_ID} fehlgeschlagen — siehe Tab\" with title \"$NOTIFY_TITLE\" sound name \"Basso\""
    ```
+
+   `$NOTIFY_TITLE` defaults to the current project directory name (basename of `git rev-parse --show-toplevel`, fallback to `pwd`). Override with `TICKET_FLOW_NOTIFY_TITLE=<name>` in shell env for a custom notification group.
 
 4. Tab bleibt offen — User kann Output reviewen. KEIN Auto-Finish.
 
@@ -137,7 +140,7 @@ Wenn Item-Typ = "Research" (AC enthält "Research-Doku" o.ä.):
 4. Synthese: alle Ergebnisse in EIN Doc zusammenfassen (z.B. `docs/research/<topic>.md`)
 5. Niemals Subagent-Output blind übernehmen — kritisch prüfen, Quellen verifizieren
 
-**Verbot**: bei Tasks die externe GUI-Tools brauchen (z.B. SigmaDSP, Hardware-Konfig, manuelle Werkzeug-Arbeit) → KEINE Subagent-Dispatches. Stattdessen interaktive Single-Session-Begleitung.
+**Verbot**: bei Tasks die externe GUI-Tools brauchen (z.B. Hardware-bezogene GUI-Tools, manuelle Werkzeug-Arbeit) → KEINE Subagent-Dispatches. Stattdessen interaktive Single-Session-Begleitung.
 
 ## Was es NICHT macht
 

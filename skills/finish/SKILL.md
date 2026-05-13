@@ -133,8 +133,11 @@ Manueller Test auf Pi steht aus. Bei Verifizierung manuell:
 3. macOS-Notification:
 
    ```bash
-   osascript -e "display notification \"✓ #${KANBAN_ID} deployed + auf Testing\" with title \"DSP Flow\" sound name \"Glass\""
+   NOTIFY_TITLE="${TICKET_FLOW_NOTIFY_TITLE:-$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")}"
+   osascript -e "display notification \"✓ #${KANBAN_ID} deployed + auf Testing\" with title \"$NOTIFY_TITLE\" sound name \"Glass\""
    ```
+
+   `$NOTIFY_TITLE` defaults to the current project directory name (basename of `git rev-parse --show-toplevel`, fallback to `pwd`). Override with `TICKET_FLOW_NOTIFY_TITLE=<name>` in shell env for a custom notification group.
 
 4. Spawn-Tab self-close (Tab-UUID aus Status-File):
 
