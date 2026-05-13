@@ -266,15 +266,16 @@ test_restore_after_input_text() {
   teardown
 }
 
-# Test 12: #110 — exactly ONE restore block (single-restore-at-end, not double-restore)
-test_single_restore_block() {
+# Test 12: #110/#2 — exactly ONE AppleScript-activate restore call (no double-activate);
+# the LaunchServices `open -b` second-stage is verified separately in test_two_stage_restore.
+test_single_activate_call() {
   setup
   MOCK_FRONTMOST_BID="com.apple.Safari" \
     REPO_ROOT="$REPO_ROOT_OVERRIDE" "$SCRIPT" "$WORKTREE" "99" >/dev/null 2>&1
   local log_file="$TMPDIR_TEST/osascript-calls.log"
   local count
   count="$(grep -c 'to activate' "$log_file")"
-  assert_eq "1" "$count" "#110: exactly one restore block expected"
+  assert_eq "1" "$count" '#110/#2: exactly one AppleScript "to activate" call expected'
   teardown
 }
 
@@ -299,7 +300,75 @@ test_return_outside_tell() {
   teardown
 }
 
-# Test 14: #1 — non-Ghostty terminal is refused before any AppleScript runs
+# Test 14a: #2 — delay before first input text is at least 2.0s (shell-ready timing bump from 0.8)
+test_shell_ready_delay_bumped() {
+  setup
+  REPO_ROOT="$REPO_ROOT_OVERRIDE" "$SCRIPT" "$WORKTREE" "99" >/dev/null 2>&1
+  local log_file="$TMPDIR_TEST/osascript-calls.log"
+  # The AppleScript body contains literal `delay 2.0` inside the first
+  # `tell application "Ghostty"` block (preceding `input text`). The mock
+  # records the full -e arg string, so we can grep it directly.
+  if grep -q 'delay 2.0' "$log_file"; then
+    PASS=$((PASS+1))
+  else
+    FAIL=$((FAIL+1))
+    FAILED_TESTS+=("#2: AppleScript should contain 'delay 2.0' for shell-ready timing")
+  fi
+  # Regression guard: the old 0.8 must not be back
+  if grep -q 'delay 0.8' "$log_file"; then
+    FAIL=$((FAIL+1))
+    FAILED_TESTS+=("#2: AppleScript still contains stale 'delay 0.8' (should be 2.0)")
+  else
+    PASS=$((PASS+1))
+  fi
+  teardown
+}
+
+# Test 14b: #2 — two-stage restore: AppleScript `activate` + LaunchServices `open -b`,
+# separated by `delay 0.5`. Verified only when frontmost != Ghostty.
+test_two_stage_restore() {
+  setup
+  MOCK_FRONTMOST_BID="com.apple.Safari" \
+    REPO_ROOT="$REPO_ROOT_OVERRIDE" "$SCRIPT" "$WORKTREE" "99" >/dev/null 2>&1
+  local log_file="$TMPDIR_TEST/osascript-calls.log"
+  # Stage 1 (existing): AppleScript activate
+  assert_contains 'tell application id "com.apple.Safari" to activate' "$(cat "$log_file")" \
+    "#2 stage 1: AppleScript activate present"
+  # Stage 2 (new): LaunchServices open -b with bundle id
+  assert_contains "open -b 'com.apple.Safari'" "$(cat "$log_file")" \
+    "#2 stage 2: LaunchServices 'open -b <bid>' present"
+  # Ordering + delay between them: find positions of activate, delay 0.5, open -b
+  local activate_pos delay_pos open_pos
+  activate_pos="$(grep -bo 'to activate' "$log_file" | head -1 | cut -d: -f1)"
+  delay_pos="$(grep -bo 'delay 0.5' "$log_file" | head -1 | cut -d: -f1)"
+  open_pos="$(grep -bo "open -b 'com.apple.Safari'" "$log_file" | head -1 | cut -d: -f1)"
+  if [[ -n "$activate_pos" && -n "$delay_pos" && -n "$open_pos" \
+        && "$activate_pos" -lt "$delay_pos" && "$delay_pos" -lt "$open_pos" ]]; then
+    PASS=$((PASS+1))
+  else
+    FAIL=$((FAIL+1))
+    FAILED_TESTS+=("#2: expected order activate < delay 0.5 < open -b (got activate=$activate_pos delay=$delay_pos open=$open_pos)")
+  fi
+  teardown
+}
+
+# Test 14c: #2 — when frontmost = Ghostty, neither restore stage runs (no flicker)
+test_no_restore_when_frontmost_is_ghostty() {
+  setup
+  MOCK_FRONTMOST_BID="com.mitchellh.ghostty" \
+    REPO_ROOT="$REPO_ROOT_OVERRIDE" "$SCRIPT" "$WORKTREE" "99" >/dev/null 2>&1
+  local log
+  log="$(cat "$TMPDIR_TEST/osascript-calls.log")"
+  if [[ "$log" != *"open -b"* ]]; then
+    PASS=$((PASS+1))
+  else
+    FAIL=$((FAIL+1))
+    FAILED_TESTS+=("#2: LaunchServices restore should be skipped when frontmost = Ghostty")
+  fi
+  teardown
+}
+
+# Test 15: #1 — non-Ghostty terminal is refused before any AppleScript runs
 test_rejects_non_ghostty_terminal() {
   setup
   local out exit_code
@@ -335,8 +404,11 @@ test_restores_frontmost_when_not_ghostty
 test_skips_restore_when_frontmost_is_ghostty
 test_pre_launches_ghostty_in_background
 test_restore_after_input_text
-test_single_restore_block
+test_single_activate_call
 test_return_outside_tell
+test_shell_ready_delay_bumped
+test_two_stage_restore
+test_no_restore_when_frontmost_is_ghostty
 test_rejects_non_ghostty_terminal
 
 echo ""
