@@ -29,6 +29,8 @@ Before merge:
 - For UI changes: `Skill(superpowers:verification-before-completion)` — requires real browser verification, not just a code check
 - For specs with ACs: walk through each AC, confirm it's met
 
+**Classify as you go** — for each AC and check, note whether it is now *proven* (typecheck/test green, a command whose success proves the outcome, mechanical correctness) or *residual* (needs human eyes: function, design, preference, subjective quality, environment-specific behavior). This classification drives the gating decision and the verification checklist in step 6.
+
 ### 3. Review (optional, depending on item size)
 
 - Trivial bugs/changes (≤50 lines, simple fix): no explicit review step
@@ -57,12 +59,29 @@ git worktree remove <worktree-path>
 git branch -d <branch>
 ```
 
-### 6. Update KANBAN.md
+### 6. Gating, verification checklist + KANBAN.md update
 
-- Remove the item from **In Progress**
-- Insert into **Testing** (top)
-- Update the note: remove the `branch:` marker
-- On spec update: remove `spec: drafting` (the spec is now approved/lives in the code)
+**Gating** — from step 2's classification, is there a non-empty *residual* (anything that genuinely needs user sign-off)?
+
+- **No residual** — the item is fully proven. Move it straight to **Done** (remove from In Progress, append to `KANBAN-done.md`), skip Testing entirely. State in the report *why* it skipped Testing.
+- **Residual exists** — move to **Testing** and generate the verification checklist (below).
+- **Borderline** (tiny residual, e.g. "just confirm the notification fires") — Testing is fine, but keep the checklist to that one line.
+
+**Verification checklist** (when the item goes to Testing) — a concise, *standalone* guide so the user can test without digging through KANBAN/spec:
+
+- One line: *what the item is*, plain language.
+- Numbered steps: the **residual** checks only — exclude anything step 2 marked as already proven.
+- Storage:
+  - **Item has a spec doc** → write it as a `## Verification` section in `docs/specs/<id>-<slug>.md` (after Acceptance Criteria). Add a `[Verify](docs/specs/<id>-<slug>.md#verification)` pointer to the KANBAN Testing-row note.
+  - **Spec-less item** (trivial, inline ACs) → put the (tiny) checklist inline in the KANBAN Testing-row note.
+
+**KANBAN.md update:**
+
+- Remove the item from **In Progress**.
+- **Residual exists** → insert into **Testing** (top); **no residual** → append to `KANBAN-done.md` instead (skip Testing).
+- Update the note: remove the `branch:` marker; remove `spec: drafting` if present; add the `[Verify]` pointer (or the inline checklist) per above.
+
+**bd surfacing** (when bd is active — `.beads/` present): write the checklist (or the `spec#verification` pointer) into the bd issue so `bd show <id>` shows it — append to the issue description or notes. (The broader bd column-label sync, `in-progress` → `testing`, is deferred to the mode-aware-skills work and is not done here.)
 
 Plus, if a bug log is warranted (multiple hypotheses, algorithmic fix, regression) and not yet present: create `docs/kanban/<id>-title.md` (or the project's equivalent) + link it.
 
@@ -94,13 +113,13 @@ Standard report (always):
 
 Merge: <commit-hash>
 Deploy: <version> (if a UI change)
-Kanban: #<id> → Testing
+Kanban: #<id> → Testing  (or → Done if gated out — state which, and why)
 Worktree removed: <path>
-
-Manual test pending. After manual verification:
-- KANBAN.md: remove the item from Testing, append to KANBAN-done.md
-- Optional: create a bug log for lessons learned
 ```
+
+If **→ Testing**: state the residual in one line + point at the `[Verify]` checklist. Manual test pending — after manual verification: remove the item from Testing in KANBAN.md, append to KANBAN-done.md, optionally create a bug log for lessons learned.
+
+If **→ Done** (no residual): say so explicitly — no manual test needed, the item is already in KANBAN-done.md.
 
 ### 9. Spawn-mode status + notification (only when `KANBAN_ID` env var is set)
 

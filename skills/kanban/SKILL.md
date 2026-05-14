@@ -33,7 +33,7 @@ Direct editing of the Kanban (this skill) is still used for: capturing new items
 | 📥 Inbox | **NEVER agents** — users triage | New / to be clarified, DoR not met |
 | 📋 Backlog | Agents pick from here (topmost item) | Prioritized (= order!), DoR met |
 | 🔄 In Progress | Active work, WIP limit 1–3 | With `branch:` lock in the note |
-| 🧪 Testing | Awaiting verification | Deployed |
+| 🧪 Testing | Awaiting user sign-off — row carries a `[Verify]` checklist pointer | Has a residual that needs human verification (fully-proven items skip → Done) |
 
 ## Actions
 
@@ -43,7 +43,7 @@ Direct editing of the Kanban (this skill) is still used for: capturing new items
 | New strategic topic | → ROADMAP.md (epic, later, or parked) | — (roadmap is not in bd) |
 | Inbox item meets DoR | → Backlog at the right priority slot | `bd update <id> --remove-label inbox --add-label backlog` |
 | Agent picked Backlog item | Set `branch: <name>` in note → In Progress | `bd update <id> --remove-label backlog --add-label in-progress --status in_progress` |
-| Deployed / implemented | → Testing | `bd update <id> --remove-label in-progress --add-label testing --status open` |
+| Deployed / implemented | → Testing **if** a residual needs sign-off (with `[Verify]` checklist), else → Done directly | `bd update <id> --remove-label in-progress --add-label testing --status open` |
 | Verified | Remove row + append to KANBAN-done.md | `bd close <id> --reason "verified"` |
 | Roadmap item becomes concrete | from ROADMAP.md → KANBAN.md Inbox | `bd create` (see row 1) |
 | Dependency identified | `blocked by: #X` in the note | `bd dep add <a> <b>` (a depends on b) |
@@ -101,10 +101,12 @@ grep -E '\[mess-align\]|\[tauri-dist\]|\[ui\]' KANBAN.md ROADMAP.md
 ## Note format (pipe-separated, greppable)
 
 ```
-[Spec](url) · [Plan](url) · branch: feat/93 · blocks: #92 · blocked by: #27 · spec: pending
+[Spec](url) · [Plan](url) · [Verify](url#verification) · branch: feat/93 · blocks: #92 · blocked by: #27 · spec: pending
 ```
 
 Empty note: `—`.
+
+`[Verify]` points at the `## Verification` section of the spec doc — added by `/ticket-flow:finish` when an item moves to Testing (see the finish skill). Spec-less items carry the (tiny) verification checklist inline instead.
 
 **Spec vs. plan:**
 - **Spec** (`docs/specs/<id>-<slug>.md`): WHAT should be achieved — context, acceptance criteria, out of scope, references. Item-specific, mandatory for features / larger changes before Backlog.
