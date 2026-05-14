@@ -6,7 +6,7 @@ description: Orchestrator for Ticket-Flow — runs /ticket-flow:pickup here, the
 # /flow — Ticket-Flow orchestrator
 
 **Args**:
-- Spawn mode: `<kanban-id>` (required) · `<branch-suffix>` (optional, forwarded to /pickup) · `--local` (optional, opt-in for classic mode).
+- Spawn mode: `<kanban-id>` (required) · `<branch-suffix>` (optional, forwarded to /pickup) · `--local` (optional, opt-in for classic mode) · `--decisions a,b,c` / `--use-recommendations` (optional, mutually exclusive — resolve the spec's `## Decisions` section; apply in spawn **and** `--local` mode; see step 1.6).
 - Cleanup mode: first arg `cleanup`, optional `<kanban-id>` for selective sweep, optional `--stale` to also remove stale-running entries (tab gone, status never reached done/error), optional `--dry-run` for report-only.
 
 ## What it does
@@ -71,12 +71,28 @@ Examples:
 ID=""
 SUFFIX=""
 LOCAL=0
+DECISIONS=""        # comma-separated option numbers, positional → D1,D2,…
+USE_RECS=0
+prev=""
 for arg in "$@"; do
   case "$arg" in
-    --local) LOCAL=1 ;;
-    *) if [[ -z "$ID" ]]; then ID="$arg"; else SUFFIX="$arg"; fi ;;
+    --local)               LOCAL=1 ;;
+    --use-recommendations) USE_RECS=1 ;;
+    --decisions)           ;;                       # value is the next arg
+    --decisions=*)         DECISIONS="${arg#*=}" ;;
+    *)
+      if   [[ "$prev" == "--decisions" ]]; then DECISIONS="$arg"
+      elif [[ -z "$ID" ]];                 then ID="$arg"
+      else                                      SUFFIX="$arg"
+      fi ;;
   esac
+  prev="$arg"
 done
+# --decisions and --use-recommendations are mutually exclusive
+if [[ -n "$DECISIONS" && "$USE_RECS" -eq 1 ]]; then
+  echo "❌ --decisions and --use-recommendations are mutually exclusive" >&2
+  exit 1
+fi
 ```
 
 ### 1.5. Pre-spawn cleanup (default mode)
@@ -91,6 +107,29 @@ Cleanup is non-fatal: even when there's nothing to clean (fresh start) or indivi
 
 Skip if `--local`: classic mode doesn't clean anything (no spawn → no tab leftovers).
 
+### 1.6. Decision gate (spawn + `--local`)
+
+Before pickup, check whether the item's spec still has design decisions that need a human pick.
+
+1. **Find the spec**: from KANBAN.md, the `[Spec](docs/specs/<id>-<slug>.md)` link in the `<id>` row's note. No spec link → no gate, continue to step 2.
+2. **Read the spec.** Does it have a `## Decisions` section with `### D1…` entries?
+   - **No `## Decisions` section** → nothing to resolve, continue to step 2.
+   - **`## Decisions` present AND a `## Decision Log` that covers every `D#`** → already resolved (locked via the `/ticket-flow:spec` review step), continue to step 2.
+   - **`## Decisions` present but no covering `## Decision Log`** → *unresolved*. This is normal for an approved spec whose owner chose to lock the picks at flow-time — that is exactly what the flags are for:
+     - **Neither `--decisions` nor `--use-recommendations` passed** → **STOP. Do not run pickup.** Output:
+       ```
+       ⏸ /ticket-flow:flow stopped — #<id> has unresolved decisions
+
+       docs/specs/<id>-<slug>.md has an open `## Decisions` section (D1–D<n>)
+       with no `## Decision Log`. Review the options, then either:
+         • lock them via the /ticket-flow:spec review step, or
+         • re-run:  /ticket-flow:flow <id> --decisions <a,b,…>   (option per D#)
+                    /ticket-flow:flow <id> --use-recommendations  (all recommended)
+       ```
+     - **`--use-recommendations`** → for every `D#`, pick the option marked `(recommended)`.
+     - **`--decisions a,b,c`** → positional: option `a` for `D1`, `b` for `D2`, … A count mismatch (more/fewer picks than `D#` entries) or an out-of-range option number → **STOP** with an error naming the mismatch.
+3. When decisions were resolved here via a flag, **hold the picks** — they get written to the spec's `## Decision Log` in step 2.5, *after* pickup, so the log lands on the worktree branch.
+
 ### 2. Phase 1: pickup
 
 Invoke `Skill(ticket-flow:pickup)` with `<kanban-id>` + optional `<branch-suffix>`.
@@ -98,6 +137,30 @@ Invoke `Skill(ticket-flow:pickup)` with `<kanban-id>` + optional `<branch-suffix
 On error (DoR not met, item not in Backlog, etc.): abort + report. The user can fix the issue and re-run `/flow`.
 
 Pickup returns the worktree path — keep it in `$WORKTREE` for step 3.
+
+### 2.5. Record resolved decisions (after pickup)
+
+Only when step 1.6 resolved decisions via `--decisions` / `--use-recommendations` — otherwise skip.
+
+Append a `## Decision Log` to the **bottom** of the worktree's copy of the spec (`$WORKTREE/docs/specs/<id>-<slug>.md`) — same format the `/ticket-flow:spec` review step uses:
+
+```
+## Decision Log
+
+Locked <YYYY-MM-DD> — via /ticket-flow:flow (--decisions … | --use-recommendations).
+
+- **D1 → Option <n>** — <one-line summary of the chosen option>.
+- **D2 → Option <n>** — <one-line summary>.
+```
+
+Commit it in the worktree:
+
+```bash
+cd "$WORKTREE" && git add docs/specs/<id>-<slug>.md \
+  && git commit -m "spec: #<id> — lock decisions (D1–D<n>) via /flow"
+```
+
+The spawned (or `--local`) `/ticket-flow:implement` then reads a spec whose decisions are already locked — no flag needs to cross the spawn boundary.
 
 ### 3. Branching: default spawn or --local
 
