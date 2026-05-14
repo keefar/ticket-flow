@@ -21,6 +21,8 @@ Same as `/ticket-flow:implement`: read the current branch, search KANBAN.md (mai
 
 - Extract ID, title, tag, spec/plan links
 
+**Commit-cwd caveat** (same as `/ticket-flow:implement` Step 1): in an EnterWorktree session, git commits to the **main repo** must run as `cd <main-repo> && git ...` in a single statement, and commits to the **worktree branch** must run from the worktree **root** (not a subdir) — otherwise `git` fails with `.git/index.lock: Operation not permitted`. This bites in Step 5 (merge) and Step 6 (KANBAN update).
+
 ### 2. Final verification
 
 Before merge:
@@ -47,6 +49,8 @@ If the project has a `deploy` skill or a similar build/deploy pipeline and the c
 If there is no deploy skill or the change is documentation-only: skip.
 
 ### 5. Merge to main
+
+**Before merging — commit `.beads/` first** (when bd is active): `bd` commands (in pickup, here, or the kanban skill) dirty `.beads/*.jsonl` in the working tree. `git merge` against a dirty `.beads/` either refuses ("Your local changes to the following files would be overwritten by merge") or drags the uncommitted state into the merge commit. Commit `.beads/issues.jsonl` (and `.beads/kanban-bd-mapping.json` if it changed) on the **target branch** *before* `git merge` runs — `git status` should be clean apart from the branch you're about to merge.
 
 Skill delegation: `Skill(superpowers:finishing-a-development-branch)` for a clean merge workflow (FF/squash/rebase depending on branch character).
 
@@ -93,16 +97,24 @@ git worktree remove <worktree-path>
 git branch -d <branch>  # local cleanup if the remote is already gone
 ```
 
-**IMPORTANT**: `git worktree remove` fails with "Operation not permitted" if the current session lives in the worktree directory (the process can't delete its own cwd). When running `/ticket-flow:flow` from a worktree session → defer cleanup to a **fresh** separate session.
+**IMPORTANT — the "Operation not permitted" error is usually misleading**: `git worktree remove` frequently prints `Operation not permitted` and exits non-zero, yet **completes the removal anyway**. This is the normal case when the command runs from the **main-repo session** (i.e. after `ExitWorktree` has already left the worktree). Don't treat the error as failure — verify with `git worktree list`:
 
-Report hint when cleanup is deferred:
+```bash
+git worktree remove <worktree-path>   # may print "Operation not permitted"
+git worktree list                     # ← source of truth: is <worktree-path> still listed?
+```
 
-```
-⚠️ Worktree cleanup blocked (session is in the worktree cwd). Run manually
-from a fresh terminal/session:
-  git worktree remove --force .claude/worktrees/<name>
-  git branch -D worktree-<name>
-```
+- **Path gone from `git worktree list`** → cleanup succeeded despite the error. Proceed.
+- **Path still listed** → genuinely blocked (e.g. the session's cwd is still inside the worktree). *Now* defer:
+
+  ```
+  ⚠️ Worktree cleanup genuinely blocked (still in `git worktree list`). Run manually
+  from a fresh terminal/session:
+    git worktree remove --force .claude/worktrees/<name>
+    git branch -D worktree-<name>
+  ```
+
+When `/ticket-flow:flow` runs from a worktree session: leave the worktree first (`ExitWorktree`), then run the cleanup from the main-repo session — "error printed, removal done" is the common path, so pre-emptive deferral is rarely needed.
 
 ### 8. Report
 

@@ -32,6 +32,8 @@ cd <main-repo-path> && git add <files> && git commit -F - <<'COMMIT'
 COMMIT
 ```
 
+**Also — committing to the worktree branch itself**: even commits that *do* target the worktree branch must run with cwd = the worktree **root**, not a subdirectory of it. From a subdir, `git commit` fails the same way — `.git/index.lock: Operation not permitted` — because the harness ties index-lock writes to the session's physical cwd. Same root cause as the cross-repo case above, different fix: `cd "$(git rev-parse --show-toplevel)"` (the worktree root) before committing.
+
 - Not found: error — "No Kanban item with `branch: <branch>` in In Progress. Run /ticket-flow:pickup first."
 - Found: extract ID, title, tag, plan link
 
