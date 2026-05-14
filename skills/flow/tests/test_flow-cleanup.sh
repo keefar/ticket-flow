@@ -13,6 +13,9 @@ export TMPDIR=/tmp/claude
 
 SCRIPT="$(cd "$(dirname "$0")/.." && pwd)/flow-cleanup.sh"
 
+# Real timeout binary (NOT the mock) — needed to exercise the timeout backstop.
+REAL_TIMEOUT="$(command -v timeout || command -v gtimeout || true)"
+
 PASS=0
 FAIL=0
 FAILED_TESTS=()
@@ -96,20 +99,22 @@ setup() {
 '  echo "dead"; exit 0' \
 'fi' \
 'if [[ "$SCRIPT_BODY" == *"close terminal id"* ]]; then' \
-'  echo "$UUID" >> "$TMPDIR_TEST/closed-tabs.log"; exit 0' \
+'  echo "$UUID" >> "$TMPDIR_TEST/closed-tabs.log"' \
+'  if [[ "${MOCK_HANG_ON_CLOSE:-}" == "1" ]]; then trap "" TERM; while true; do sleep 5; done; fi' \
+'  exit 0' \
 'fi' \
 'exit 0' \
 > "$MOCK_BIN/osascript"
   chmod +x "$MOCK_BIN/osascript"
   export PATH="$MOCK_BIN:$PATH"
   export TMPDIR_TEST
-  unset MOCK_ALIVE_UUIDS
+  unset MOCK_ALIVE_UUIDS MOCK_HANG_ON_CLOSE
 }
 
 teardown() {
   cd /
   rm -rf "$TMPDIR_TEST"
-  unset TMPDIR_TEST MOCK_ALIVE_UUIDS
+  unset TMPDIR_TEST MOCK_ALIVE_UUIDS MOCK_HANG_ON_CLOSE
 }
 
 # Helpers --------------------------------------------------------------
@@ -147,13 +152,15 @@ run_cleanup() {
 
 # Tests ----------------------------------------------------------------
 
-test_done_merged_is_cleaned() {
+# A `done` item whose tab is still alive: the tab is closed, then worktree +
+# branch + status file are removed.
+test_done_alive_tab_is_closed() {
   setup
   local wt status_file
   wt="$(mk_worktree 100 "feat-a")"
   status_file="$(mk_status 100 done "$wt" UUID-100)"
   local out
-  out="$(run_cleanup)"
+  out="$(MOCK_ALIVE_UUIDS="UUID-100" run_cleanup)"
   assert_contains "✓ #100 (done)" "$out" "happy-path reports cleaned"
   assert_file_absent "$status_file" "status file removed"
   assert_file_absent "$wt" "worktree dir removed"
@@ -161,11 +168,53 @@ test_done_merged_is_cleaned() {
   local branches
   branches="$(cd "$REPO" && git branch --list 2>/dev/null)"
   assert_not_contains "worktree-100-feat-a" "$branches" "branch deleted"
-  # tab close was attempted
+  # tab close was attempted on the live tab
   assert_file_exists "$TMPDIR_TEST/closed-tabs.log" "close was invoked"
   local closed
   closed="$(cat "$TMPDIR_TEST/closed-tabs.log" 2>/dev/null)"
   assert_contains "UUID-100" "$closed" "closed terminal UUID-100"
+  teardown
+}
+
+# #15: a `done` item whose tab is ALREADY GONE (the repro — tab self-closed).
+# The fast-probe sees it's dead, so `close terminal id` is never invoked — that
+# is the call that wedges. The sweep still removes worktree + branch + status.
+test_done_dead_tab_skips_close_still_cleans() {
+  setup
+  local wt status_file
+  wt="$(mk_worktree 106 "gone-tab")"
+  status_file="$(mk_status 106 done "$wt" UUID-GONE)"
+  local out
+  # No MOCK_ALIVE_UUIDS → the probe reports UUID-GONE dead.
+  out="$(run_cleanup)"
+  assert_contains "✓ #106 (done)" "$out" "dead-tab item still reported cleaned"
+  assert_file_absent "$status_file" "dead-tab: status file still removed"
+  assert_file_absent "$wt" "dead-tab: worktree still removed"
+  assert_file_absent "$TMPDIR_TEST/closed-tabs.log" "dead-tab: close NOT invoked (never wedge a dead UUID)"
+  teardown
+}
+
+# #15 regression: even if a tab probes alive but `close terminal id` then
+# wedges (and ignores SIGTERM), the sweep must finish in bounded time — the
+# helper's timeout backstop escalates to SIGKILL. Wrapped in an outer timeout
+# so a real hang fails the test instead of hanging the suite.
+test_done_hanging_close_does_not_block() {
+  if [[ -z "$REAL_TIMEOUT" ]]; then
+    PASS=$((PASS+1))  # no timeout binary on this host — backstop cannot apply
+    return
+  fi
+  setup
+  local wt status_file rc
+  wt="$(mk_worktree 107 "wedge-tab")"
+  status_file="$(mk_status 107 done "$wt" UUID-WEDGE)"
+  "$REAL_TIMEOUT" -s KILL 12 bash -c '
+    cd "$1"
+    MOCK_ALIVE_UUIDS="UUID-WEDGE" MOCK_HANG_ON_CLOSE=1 GHOSTTY_AS_TIMEOUT=1 \
+      REPO_ROOT="$1" bash "$2" >/dev/null 2>&1
+  ' _ "$REPO" "$SCRIPT"
+  rc=$?
+  assert_eq 0 "$rc" "sweep returns 0 even when a close wedges (outer timeout did not fire)"
+  assert_file_absent "$status_file" "wedge-tab: sweep still completed and removed the status file"
   teardown
 }
 
@@ -386,7 +435,9 @@ test_non_main_head_unmerged_is_skipped() {
 
 # ----------------------------------------------------------------------
 
-test_done_merged_is_cleaned
+test_done_alive_tab_is_closed
+test_done_dead_tab_skips_close_still_cleans
+test_done_hanging_close_does_not_block
 test_done_unmerged_is_skipped
 test_error_is_skipped
 test_running_alive_is_skipped

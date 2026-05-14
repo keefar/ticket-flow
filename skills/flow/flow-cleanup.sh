@@ -2,7 +2,7 @@
 # flow-cleanup.sh — Sweep finished /flow spawns from `.claude/impl-status/`.
 #
 # For each status file:
-#   - status=done   → close tab (AS), git worktree remove, git branch -d, rm
+#   - status=done   → close tab (hang-safe AS), worktree remove, branch -d, rm
 #                     status file. Skip if branch not fully merged (safe `-d`).
 #   - status=error  → skip + report (manual review needed).
 #   - status=running → ping Ghostty for tab id. If tab still alive: leave alone.
@@ -28,7 +28,12 @@
 
 set -u
 
-GHOSTTY_BID="com.mitchellh.ghostty"
+# Hang-safe Ghostty AppleScript helpers (ghostty_tab_alive, ghostty_close_tab,
+# ghostty_osascript) — extracted to ghostty-osascript.sh in #15 so the wedge
+# fix (fast-probe + SIGKILL-escalating timeout) lives in one shared place.
+# Sourced as a sibling of this script.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/ghostty-osascript.sh"
 
 ONLY_ID=""
 INCLUDE_STALE=0
@@ -108,42 +113,6 @@ branch_from_path() {
   echo "worktree-${base}"
 }
 
-# AppleScript: does this Ghostty terminal id still exist?
-# Returns 0=alive, 1=dead/unknown (also when osascript missing).
-ghostty_tab_alive() {
-  local uuid="$1"
-  command -v osascript >/dev/null 2>&1 || return 1
-  [[ -z "$uuid" ]] && return 1
-  local out
-  out="$(osascript <<APPLESCRIPT 2>/dev/null
-tell application id "$GHOSTTY_BID"
-  try
-    set _ to id of terminal id "$uuid"
-    return "alive"
-  on error
-    return "dead"
-  end try
-end tell
-APPLESCRIPT
-)" || return 1
-  [[ "$out" == "alive" ]]
-}
-
-# AppleScript: close terminal (bypasses confirm-close-surface because it's
-# initiated by AppleScript, not a user keybind).
-ghostty_close_tab() {
-  local uuid="$1"
-  command -v osascript >/dev/null 2>&1 || return 0
-  [[ -z "$uuid" ]] && return 0
-  osascript >/dev/null 2>&1 <<APPLESCRIPT || true
-tell application id "$GHOSTTY_BID"
-  try
-    close terminal id "$uuid"
-  end try
-end tell
-APPLESCRIPT
-}
-
 # Counters
 CLEANED=0
 SKIPPED_ERROR=0
@@ -204,7 +173,8 @@ clean_one() {
     return 0
   fi
 
-  # 1. Close tab (best-effort). For `done` we don't care if it's already gone.
+  # 1. Close tab — hang-safe (ghostty-osascript.sh): a dead/already-gone tab is
+  # fast-probed and skipped, never handed to the wedge-prone `close terminal id`.
   ghostty_close_tab "$tab_uuid"
 
   # 2. Remove worktree. Try plain first; --force only if plain fails for the
