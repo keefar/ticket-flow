@@ -18,7 +18,7 @@ All paths are relative to the project root (cwd / `git rev-parse --show-toplevel
 
 | Command | Phase | Effect |
 |---|---|---|
-| `/ticket-flow:spec <id>` | Pre-Backlog | Create a spec doc from template, set note to `spec: drafting` |
+| `/ticket-flow:spec <id>` | Pre-Backlog | Create a spec doc from template, set note to `spec: drafting` (or a full autonomous draft with `--auto`, note → `spec: review`) |
 | `/ticket-flow:pickup <id>` | Phase 1 | Worktree + branch lock + move to In Progress |
 | `/ticket-flow:implement` | Phase 2 | Execute the plan (interactive or subagent dispatch) |
 | `/ticket-flow:finish` | Phase 3 | Review + deploy + merge + move to Testing |
@@ -114,7 +114,8 @@ Empty note: `—`.
 
 **Status markers (Inbox-only):**
 - `spec: pending` — nobody is on it
-- `spec: drafting (<who>)` — currently being written
+- `spec: drafting (<who>)` — currently being written (interactive `/ticket-flow:spec`)
+- `spec: review` — drafted autonomously by `/ticket-flow:spec --auto`, **waiting on the user's decision-review**. Scan for these first — they are the items that need your eyes (the spec's `## Decisions` section) before they can move to Backlog. Cleared by the `/ticket-flow:spec` review step (or `/ticket-flow:flow --decisions` / `--use-recommendations`).
 - `decision: open` — implementation not decided
 
 ## Bug log / plan / spec
