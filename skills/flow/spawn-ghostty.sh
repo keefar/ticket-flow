@@ -22,6 +22,15 @@ set -u
 
 GHOSTTY_BID="com.mitchellh.ghostty"
 
+# Hang-safe osascript wrapper — #15's shared ghostty-osascript.sh. spawn-ghostty.sh's
+# osascript calls can wedge Ghostty's AppleScript handler indefinitely (#18);
+# `ghostty_osascript` bounds every call with a SIGKILL-escalating timeout.
+# GHOSTTY_AS_TIMEOUT is sized for the spawn block — it contains ~4.8s of
+# intentional `delay`s plus the real AppleScript work — and is env-overridable.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+GHOSTTY_AS_TIMEOUT="${GHOSTTY_AS_TIMEOUT:-30}"
+source "$SCRIPT_DIR/ghostty-osascript.sh"
+
 err() {
   echo "ERROR: $*" >&2
   echo "ERROR: $*"
@@ -68,7 +77,7 @@ NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 # setup (CLAUDE_TAB_TTY, CLAUDE_CODE_DISABLE_TERMINAL_TITLE, KANBAN_ID), sets
 # the initial tab title to `#<id> ⚙`, runs claude, and updates the title to
 # `#<id> ✓`/`✗` from the status file after claude exits.
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# SCRIPT_DIR was already resolved at the top (for sourcing ghostty-osascript.sh).
 WRAP_SCRIPT="$SCRIPT_DIR/flow-wrap.sh"
 [[ -x "$WRAP_SCRIPT" ]] || err "flow-wrap.sh missing or not executable: $WRAP_SCRIPT"
 
@@ -81,7 +90,7 @@ WRAP_ESC="${WRAP_ESC//\"/\\\"}"
 # 1) Capture currently frontmost app's bundle id. Best-effort — if System Events
 #    refuses or returns empty, we fall back to no-restore (still better than the
 #    old `focus`-based version since the focus call is gone).
-FRONTMOST_BID="$(osascript -e 'tell application "System Events" to bundle identifier of first application process whose frontmost is true' 2>/dev/null || true)"
+FRONTMOST_BID="$(ghostty_osascript -e 'tell application "System Events" to bundle identifier of first application process whose frontmost is true' 2>/dev/null || true)"
 FRONTMOST_BID="${FRONTMOST_BID//$'\n'/}"
 
 # 2) Pre-launch Ghostty in background. No-op if already running; if it has to
@@ -153,12 +162,22 @@ return termID
 APPLESCRIPT_END
 )
 
-# Run AppleScript, capture UUID
-TAB_UUID="$(osascript -e "$APPLESCRIPT" 2>&1)"
+# Run AppleScript, capture UUID. ghostty_osascript bounds the call with a
+# SIGKILL-escalating timeout (#18) — a wedged Ghostty AS handler can no longer
+# hang the spawn indefinitely; it fails fast instead.
+TAB_UUID="$(ghostty_osascript -e "$APPLESCRIPT" 2>&1)"
 ASCRIPT_EXIT=$?
 
 if [[ $ASCRIPT_EXIT -ne 0 ]] || [[ -z "$TAB_UUID" ]]; then
-  err "osascript failed (exit $ASCRIPT_EXIT): $TAB_UUID"
+  # 124/137 = the timeout fired (osascript wedged). Fail fast: /flow's step 3
+  # already handles SPAWN_EXIT != 0. The orphan tab (if one was created before
+  # the wedge) is left for the user / the next pre-spawn cleanup — chasing it
+  # with another osascript would just hit the same wedged handler (#18 D3).
+  if [[ $ASCRIPT_EXIT -eq 124 || $ASCRIPT_EXIT -eq 137 ]]; then
+    err "Ghostty AppleScript timed out after ${GHOSTTY_AS_TIMEOUT}s — the osascript call wedged (#18). Spawn aborted; a partly-created tab may need closing by hand. Workaround: /ticket-flow:flow <id> --local."
+  else
+    err "osascript failed (exit $ASCRIPT_EXIT): $TAB_UUID"
+  fi
 fi
 
 # Write status file

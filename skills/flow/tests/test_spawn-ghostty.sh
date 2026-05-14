@@ -5,6 +5,9 @@ set -u
 SCRIPT="$(cd "$(dirname "$0")/.." && pwd)/spawn-ghostty.sh"
 REPO_ROOT="$(cd "$(dirname "$0")/../../../.." && pwd)"
 
+# Real timeout binary (NOT mocked) — needed to exercise / verify the #18 backstop.
+REAL_TIMEOUT="$(command -v timeout || command -v gtimeout || true)"
+
 PASS=0
 FAIL=0
 FAILED_TESTS=()
@@ -393,6 +396,51 @@ test_rejects_non_ghostty_terminal() {
   teardown
 }
 
+# Test 16: #18 — a hanging osascript must not hang spawn-ghostty.sh. The osascript
+# calls are timeout-bounded (SIGKILL-escalating, via #15's ghostty-osascript.sh):
+# a wedged osascript → spawn exits non-zero in bounded time, reports ERROR, writes
+# no status file. Wrapped in an outer timeout so a real hang fails the test instead
+# of hanging the suite.
+test_hanging_osascript_is_bounded() {
+  if [[ -z "$REAL_TIMEOUT" ]]; then
+    PASS=$((PASS+1))  # no timeout binary on this host — backstop cannot apply
+    return
+  fi
+  setup
+  # mock osascript: frontmost-capture returns fast; the main block wedges
+  # (SIGTERM-resistant, mirroring the real Ghostty bug).
+  cat > "$MOCK_BIN/osascript" <<'MOCK'
+#!/usr/bin/env bash
+echo "$@" >> "$TMPDIR_TEST/osascript-calls.log"
+if [[ "$*" == *"bundle identifier of first application"* ]]; then
+  echo "${MOCK_FRONTMOST_BID:-com.apple.finder}"
+  exit 0
+fi
+trap "" TERM
+while true; do sleep 5; done
+MOCK
+  chmod +x "$MOCK_BIN/osascript"
+  local out exit_code
+  out="$("$REAL_TIMEOUT" -s KILL 20 env GHOSTTY_AS_TIMEOUT=2 \
+    REPO_ROOT="$REPO_ROOT_OVERRIDE" "$SCRIPT" "$WORKTREE" "99" 2>&1)"
+  exit_code=$?
+  # 137 = the OUTER timeout fired = spawn-ghostty.sh hung past 20s = backstop failed.
+  if [[ $exit_code -ne 137 && $exit_code -ne 0 ]]; then
+    PASS=$((PASS+1))
+  else
+    FAIL=$((FAIL+1))
+    FAILED_TESTS+=("#18: hanging osascript should make spawn exit non-zero in bounded time (got exit $exit_code)")
+  fi
+  assert_contains "ERROR" "$out" "#18: timed-out spawn reports ERROR"
+  if [[ ! -f "$REPO_ROOT_OVERRIDE/.claude/impl-status/99.json" ]]; then
+    PASS=$((PASS+1))
+  else
+    FAIL=$((FAIL+1))
+    FAILED_TESTS+=("#18: timed-out spawn must not write a status file")
+  fi
+  teardown
+}
+
 test_happy_path
 test_missing_worktree
 test_not_a_worktree
@@ -410,6 +458,7 @@ test_shell_ready_delay_bumped
 test_two_stage_restore
 test_no_restore_when_frontmost_is_ghostty
 test_rejects_non_ghostty_terminal
+test_hanging_osascript_is_bounded
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
