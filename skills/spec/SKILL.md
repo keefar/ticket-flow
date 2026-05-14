@@ -28,24 +28,26 @@ Examples:
    - `cluster`: isolate the leading `` `[xxx]` `` marker from `title_raw` (if present). Otherwise `-`.
    - `title`: `title_raw` without the cluster-marker prefix and without leading whitespace
    - `note`: fourth pipe field (keep all existing pipe sub-fields!)
-   - `date`: fifth pipe field (`YYYY-MM-DD`)
+
+   No date is extracted here — KANBAN.md has only these four columns (`# · Tag · Title · Note`); it stores no creation date (see `skills/kanban/SKILL.md` `## Format`). The frontmatter `created:` is set in step 6.
 3. **Build the slug**:
    - Lowercase the title, map umlauts (ä→a, ö→o, ü→u, ß→ss), all special chars → `-`, collapse multiple `-` → single `-`, strip leading/trailing `-`
    - Max 50 chars, cut at word boundary
    - Examples: "Add user authentication" → `add-user-authentication`; "Refactor session-token-storage layer" → `refactor-session-token-storage-layer`
 4. **Target path**: `docs/specs/${id}-${slug}.md`. If the file already exists → error ("Spec already exists: <path>") and **no** KANBAN update.
 5. **Read the template**: `Read` `docs/specs/SPEC-TEMPLATE.md`.
-6. **Fill the frontmatter** (all values verbatim from the extracted fields):
+6. **Fill the frontmatter**:
    ```yaml
    ---
    id: <id>
    title: <title>
    tag: <tag>
    cluster: <cluster or "->
-   created: <date>
+   created: <today>
    status: draft
    ---
    ```
+   `id` / `title` / `tag` / `cluster` are verbatim from the step-2 fields. `created:` is **today's date** (`date +%F`) — KANBAN.md stores no creation date, and the field records when *this spec doc* was written, which is today.
 7. **Title heading** in the template: replace `# <Title>` with `# ${title}` (no cluster marker).
 8. **Keep the rest** (Context / Acceptance Criteria / Out of Scope / References / Notes) verbatim — the spec author fills it in. *(In `--auto` mode the agent fills the body instead — see **Autonomous mode (`--auto`)** below.)*
 9. **`Write`** the filled spec to the target path.
