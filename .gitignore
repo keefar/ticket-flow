@@ -3,3 +3,6 @@
 .dolt/
 *.db
 .beads-credential-key
+
+# macOS
+.DS_Store
