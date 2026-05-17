@@ -135,69 +135,38 @@ If **→ Done** (no residual): say so explicitly — no manual test needed, the 
 
 ### 9. Spawn-mode status + notification (only when `KANBAN_ID` env var is set)
 
-`KANBAN_ID` is set when this session was started via `spawn-ghostty.sh` from `/ticket-flow:flow` (or passed through from `/ticket-flow:implement`). Otherwise skip.
+`KANBAN_ID` is set when this session was started via `spawn-ghostty.sh` from `/ticket-flow:flow` (or passed through from `/ticket-flow:implement`). `flow-status.sh` is a no-op when `KANBAN_ID` is unset, so a single call covers both spawn-mode and standalone-mode (it just becomes a no-op in standalone).
 
-**On finish success:**
+**On finish success** — emit `ready-to-push` (tab title 🟢, status `done` + `ready_to_push=true`, Glass notification):
 
-1. Set the tab title to `🟢 #<id> <short-name>` (immediate visual status feedback in the Ghostty tab):
+```bash
+"${CLAUDE_PLUGIN_ROOT}/skills/flow/flow-status.sh" ready-to-push "$KANBAN_ID"
+```
 
-   ```bash
-   # Resolve BEFORE step 7 (worktree cleanup) — afterwards cwd may be invalid.
-   REPO="$(git rev-parse --path-format=absolute --git-common-dir)" && REPO="$(dirname "$REPO")"
-   "${CLAUDE_PLUGIN_ROOT}/skills/flow/set-tab-title.sh" \
-     "$("${CLAUDE_PLUGIN_ROOT}/skills/flow/format-tab-title.sh" done "$KANBAN_ID")"
-   ```
+`flow-status.sh` resolves the repo root via `--git-common-dir` (works from inside the worktree) before step 7 (worktree cleanup) destroys cwd; call this BEFORE step 7 to be safe.
 
-   `format-tab-title.sh` derives the short name from the branch slug. `flow-wrap.sh` sets the final title from the status file after Claude exits (belt-and-suspenders).
+Then spawn-tab self-close (tab UUID from status file — not handled by flow-status.sh because it's a one-off):
 
-2. Update the status file `.claude/impl-status/$KANBAN_ID.json` — `status: "done"`, `finished_at: <now>`. `$REPO` was already resolved above.
+```bash
+REPO="$(git rev-parse --path-format=absolute --git-common-dir)" && REPO="$(dirname "$REPO")"
+STATUS_FILE="$REPO/.claude/impl-status/${KANBAN_ID}.json"
+TAB_UUID="$(jq -r '.tab_uuid // empty' "$STATUS_FILE" 2>/dev/null)"
+if [[ -n "$TAB_UUID" ]]; then
+  osascript -e "tell application id \"com.mitchellh.ghostty\" to close terminal id \"$TAB_UUID\"" >/dev/null 2>&1 || true
+fi
+```
 
-   ```bash
-   STATUS_FILE="$REPO/.claude/impl-status/${KANBAN_ID}.json"
-   NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-   if command -v jq >/dev/null; then
-     jq --arg now "$NOW" '.status="done" | .finished_at=$now' \
-       "$STATUS_FILE" > "$STATUS_FILE.tmp" && mv "$STATUS_FILE.tmp" "$STATUS_FILE"
-   fi
-   ```
+The AppleScript-initiated close bypasses Ghostty's `confirm-close-surface` prompt. The status file is already `done`; the pre-spawn cleanup in the next `/ticket-flow:flow` removes worktree + branch + status file. If AppleScript is blocked (permission revoked after spawn): non-fatal — tab stays open, next flow's pre-spawn cleanup catches up.
 
-3. macOS notification:
+**Note**: `/ticket-flow:finish` does NOT run `git push`. The merge produces a local-only commit on `main`. User pushes from the main session via `/ticket-flow:push` (sweeps all `ready_to_push: true` items). Rationale: network ops in spawn hang silently on auth prompts; main session surfaces them immediately. See spec `docs/specs/5-push-from-main-session.md`.
 
-   ```bash
-   NOTIFY_TITLE="${TICKET_FLOW_NOTIFY_TITLE:-$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")}"
-   osascript -e "display notification \"✓ #${KANBAN_ID} deployed + on Testing\" with title \"$NOTIFY_TITLE\" sound name \"Glass\""
-   ```
+**On finish failure** (typecheck red, deploy fails, merge conflict) — emit `error` (tab title 🔴, status `error`, Basso notification):
 
-   `$NOTIFY_TITLE` defaults to the current project directory name (basename of `git rev-parse --show-toplevel`, fallback to `pwd`). Override with `TICKET_FLOW_NOTIFY_TITLE=<name>` in the shell env for a custom notification group.
+```bash
+"${CLAUDE_PLUGIN_ROOT}/skills/flow/flow-status.sh" error "$KANBAN_ID" "<short error description>"
+```
 
-4. Spawn-tab self-close (tab UUID from status file):
-
-   ```bash
-   TAB_UUID="$(jq -r '.tab_uuid // empty' "$STATUS_FILE" 2>/dev/null)"
-   if [[ -n "$TAB_UUID" ]]; then
-     osascript -e "tell application id \"com.mitchellh.ghostty\" to close terminal id \"$TAB_UUID\"" >/dev/null 2>&1 || true
-   fi
-   ```
-
-   The AppleScript-initiated close bypasses Ghostty's `confirm-close-surface` prompt. Closing the tab kills the Claude session inside (SIGHUP); flow-wrap.sh's title post-step won't run, but the title was already set in step 1. The status file is already `done`; the pre-spawn cleanup in the next `/ticket-flow:flow` removes worktree + branch + status file.
-
-   If AppleScript is blocked (permission revoked after spawn): non-fatal — the tab stays open (bookkeeping in the status file stays clean), and the next `/ticket-flow:flow`'s pre-spawn cleanup catches up on the tab close.
-
-**On finish failure** (typecheck red, deploy fails, merge conflict):
-
-1. Set the tab title to `🔴 #<id> <short-name>`:
-
-   ```bash
-   "${CLAUDE_PLUGIN_ROOT}/skills/flow/set-tab-title.sh" \
-     "$("${CLAUDE_PLUGIN_ROOT}/skills/flow/format-tab-title.sh" error "$KANBAN_ID")"
-   ```
-
-2. Set the status file to `status: "error"` with `error_message` (see the implement skill for the jq pattern).
-3. Notification: `❌ Finish #<id> failed — see tab` with sound `Basso`.
-4. NO auto rollback. The worktree stays for manual inspection.
-5. **NO tab close** — the tab stays open, the user can review output. The next `/ticket-flow:flow`'s pre-spawn cleanup detects `status: error`, skips cleanup, and surfaces the case to the user.
-
-**Standalone mode (KANBAN_ID not set):** skip step 9 entirely.
+NO auto rollback. The worktree stays for manual inspection. **NO tab close** — the tab stays open, the user reviews output. Next `/ticket-flow:flow`'s pre-spawn cleanup detects `status: error`, skips cleanup, and surfaces the case to the user.
 
 ## Edge cases
 

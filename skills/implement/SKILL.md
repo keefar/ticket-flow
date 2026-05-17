@@ -93,44 +93,17 @@ Auto-handoff to `/ticket-flow:finish`. No user checkpoint in between. Directly:
 Skill(ticket-flow:finish)
 ```
 
-**On implementation failure** (tests red, build broken, plan step fails):
+**On implementation failure** (tests red, build broken, plan step fails) — emit `error` (tab title 🔴, status `error` + `error_message`, Basso notification):
 
-1. Set tab title to `🔴 #<id> <short-name>` (immediate visual status feedback in the Ghostty tab):
+```bash
+"${CLAUDE_PLUGIN_ROOT}/skills/flow/flow-status.sh" error "$KANBAN_ID" "$ERROR_MSG"
+```
 
-   ```bash
-   "${CLAUDE_PLUGIN_ROOT}/skills/flow/set-tab-title.sh" \
-     "$("${CLAUDE_PLUGIN_ROOT}/skills/flow/format-tab-title.sh" error "$KANBAN_ID")"
-   ```
+`flow-status.sh` resolves the repo root via `--git-common-dir` (worktree-safe) and handles tab title + status file + macOS notification atomically. No-op in standalone mode (KANBAN_ID unset).
 
-   `${CLAUDE_PLUGIN_ROOT}` is expanded by Claude Code in the skill context to the plugin root (e.g. `~/.claude/local-plugins/ticket-flow/`). If the var isn't set (skill loaded outside a plugin): print an error to the user and resolve the path manually.
+Leave the tab open — the user can review output. NO auto-finish.
 
-   `format-tab-title.sh` derives the short name from the branch slug (`worktree-<id>-<slug>` → 2–3 words, ≤25 chars). `flow-wrap.sh` sets the title again from the status file after Claude exits. `set-tab-title.sh` is best-effort (exit 0 even on a missing TTY).
-
-2. Update the status file `.claude/impl-status/$KANBAN_ID.json` — `status: "error"`, `finished_at: <now>`, `error_message: <short description>`. Resolve the repo root via `git rev-parse --show-toplevel` from the worktree.
-
-   ```bash
-   STATUS_FILE="$(git rev-parse --show-toplevel)/.claude/impl-status/${KANBAN_ID}.json"
-   NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-   # in-place update of status, finished_at, error_message via jq if available, else sed
-   if command -v jq >/dev/null; then
-     jq --arg now "$NOW" --arg msg "$ERROR_MSG" \
-       '.status="error" | .finished_at=$now | .error_message=$msg' \
-       "$STATUS_FILE" > "$STATUS_FILE.tmp" && mv "$STATUS_FILE.tmp" "$STATUS_FILE"
-   fi
-   ```
-
-3. macOS notification:
-
-   ```bash
-   NOTIFY_TITLE="${TICKET_FLOW_NOTIFY_TITLE:-$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")}"
-   osascript -e "display notification \"❌ Implement #${KANBAN_ID} failed — see tab\" with title \"$NOTIFY_TITLE\" sound name \"Basso\""
-   ```
-
-   `$NOTIFY_TITLE` defaults to the current project directory name (basename of `git rev-parse --show-toplevel`, fallback to `pwd`). Override with `TICKET_FLOW_NOTIFY_TITLE=<name>` in the shell env for a custom notification group.
-
-4. Leave the tab open — the user can review output. NO auto-finish.
-
-**Standalone mode (KANBAN_ID not set):** skip step 7 entirely. Classic flow: the user decides whether to run /ticket-flow:finish.
+**Standalone mode (KANBAN_ID not set):** the helper is a no-op. Classic flow: the user decides whether to run /ticket-flow:finish.
 
 ## Subagent dispatch pattern (for research items)
 

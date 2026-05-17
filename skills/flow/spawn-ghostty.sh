@@ -48,10 +48,15 @@ fi
 
 # Args
 if [[ $# -lt 2 ]]; then
-  err "Usage: spawn-ghostty.sh <worktree-path> <kanban-id>"
+  err "Usage: spawn-ghostty.sh <worktree-path> <kanban-id> [<spawning-tab-id>]"
 fi
 WORKTREE="$1"
 KANBAN_ID="$2"
+# Optional 3rd arg from /ticket-flow:flow — id of the tab that invoked /flow.
+# When set, the new tab is placed right after this tab (Ghostty's window-new-tab-position
+# = current applied after select-before-new), then the user's prior selection is restored.
+# Empty / unset → current behavior (new tab lands after whatever is selected).
+SPAWNING_TAB_ID="${3:-}"
 
 # Resolve repo root (where status file lives) — MAIN repo, not the worktree.
 # When called from a worktree, --show-toplevel returns the worktree path. We use
@@ -122,6 +127,48 @@ RESTORE_END
 )
 fi
 
+# Spawning-tab-id placement block (#9s3): when set, select the spawning tab
+# right before `new tab` so Ghostty's window-new-tab-position=current default
+# places the new tab directly after it (instead of after whatever the user
+# clicked since /flow started). Then restore the previously-selected tab so
+# the user's Ghostty selection doesn't jump. All best-effort: missing tab id,
+# tab gone, or AppleScript error → fall through to the unmodified
+# new-tab-in-front-window path, no failure surface.
+SPAWNING_TAB_ESC="${SPAWNING_TAB_ID//\\/\\\\}"
+SPAWNING_TAB_ESC="${SPAWNING_TAB_ESC//\"/\\\"}"
+
+SELECT_SPAWNING_BLOCK=""
+RESTORE_PRIOR_SELECTION_BLOCK=""
+if [[ -n "$SPAWNING_TAB_ID" ]]; then
+  SELECT_SPAWNING_BLOCK=$(cat <<SEL_END
+  -- #9s3: capture pre-selected tab, then select the spawning tab so the new
+  -- tab lands after it. Both wrapped in try/end try — non-fatal if the
+  -- spawning tab was closed.
+  set priorTabID to ""
+  try
+    set priorTabID to id of selected tab of front window
+  end try
+  try
+    set spawningTab to (first tab of front window whose id is "${SPAWNING_TAB_ESC}")
+    select spawningTab
+  end try
+SEL_END
+)
+  RESTORE_PRIOR_SELECTION_BLOCK=$(cat <<RESTORE_TAB_END
+-- #9s3: restore the user's prior tab selection (unless it WAS the spawning
+-- tab, or has been closed). Runs AFTER the new tab is created.
+try
+  tell application "Ghostty"
+    if priorTabID is not "" and priorTabID is not "${SPAWNING_TAB_ESC}" then
+      set restoreTab to (first tab of front window whose id is priorTabID)
+      select restoreTab
+    end if
+  end tell
+end try
+RESTORE_TAB_END
+)
+fi
+
 # AppleScript — uses Ghostty 1.3 API. Tab creation and input-text live in
 # two `tell` blocks. Restore runs AFTER block 2 (post send-key) because the
 # `input text`/`send key` calls re-activate Ghostty implicitly — restoring
@@ -135,6 +182,7 @@ APPLESCRIPT=$(cat <<APPLESCRIPT_END
 tell application "Ghostty"
   set cfg to new surface configuration
   set initial working directory of cfg to "${WT_ESC}"
+${SELECT_SPAWNING_BLOCK}
   if (count of windows) is 0 then
     set newWin to new window with configuration cfg
     set newTerm to focused terminal of newWin
@@ -143,6 +191,8 @@ tell application "Ghostty"
     set newTerm to focused terminal of newTab
   end if
 end tell
+
+${RESTORE_PRIOR_SELECTION_BLOCK}
 
 tell application "Ghostty"
   delay 2.0

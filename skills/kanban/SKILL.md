@@ -141,11 +141,12 @@ Empty note: `—`.
 
 **Do not update**: purely informational task (question, explanation) or item already at the right status.
 
-## bd Sync
+## bd Sync (when `.beads/issues.jsonl` exists)
 
-When `.beads/issues.jsonl` exists (pilot active):
+The Actions table above lists every bd call by trigger. Below: only the details that don't fit a one-line table cell.
 
-**Create a new item:**
+**Full `bd create` template** (needed for `--priority`, multiple `--label`, optional cluster):
+
 ```bash
 bd create \
   --title "<full title including [cluster] marker>" \
@@ -154,32 +155,11 @@ bd create \
   --priority 4 \
   --label kanban-<N> \
   --label inbox \
-  --label cluster-<marker>   # if a cluster applies
-```
-The output provides an `id` (e.g. `PROJ-abc`). Write the bd-id into `.beads/kanban-bd-mapping.json` AND into the KANBAN.md `bd` column as `` `PROJ-abc` ``.
-
-**Column move** (update inbox/backlog/in-progress/testing labels):
-```bash
-bd update <bd-id> --remove-label <old> --add-label <new>
-# For In Progress also: --status in_progress
-# For Testing back: --status open
+  --label cluster-<marker>   # only if a cluster applies
 ```
 
-**Close** (move to Done):
-```bash
-bd close <bd-id> --reason "verified"
-```
+After create: write the returned `<bd-id>` (e.g. `PROJ-abc`) into BOTH `.beads/kanban-bd-mapping.json` (as `"N": "PROJ-abc"`) AND the KANBAN.md `bd` column.
 
-**Dependency**:
-```bash
-bd dep add <a-bd-id> <b-bd-id>   # a depends on b
-```
-
-**Ready check** (what can be started?):
-```bash
-bd ready
-```
-
-**Keep the mapping file current**: on every `bd create` add an entry to `.beads/kanban-bd-mapping.json` (`"N": "PROJ-abc"`).
+**Ready check** (not in the Actions table — agent-driven, not status-driven): `bd ready` lists all unblocked Backlog items.
 
 **Sandbox**: bd calls need `dangerouslyDisableSandbox: true` because bd writes to the local Dolt DB. The `beads.role not configured` warning is harmless.
