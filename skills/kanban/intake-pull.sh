@@ -43,11 +43,19 @@ cd "$ROOT" || exit 1
 [[ -f KANBAN.md ]] || { echo "ERROR: KANBAN.md missing" >&2; exit 1; }
 [[ -d .beads ]]   || { echo "ERROR: .beads/ missing — intake-pull is Mode A only" >&2; exit 1; }
 
-# Extract intake zone.
+# Extract intake zone. Skip nested HTML comments (`<!-- ... -->`) — they're
+# documentation, not intake. Blank lines inside a comment would otherwise be
+# treated as block separators and the comment text as block content.
 INTAKE="$(awk '
   /<!-- INTAKE:START -->/ { in_block=1; next }
   /<!-- INTAKE:END -->/   { in_block=0; next }
-  in_block { print }
+  !in_block { next }
+  # Skip nested HTML comments while inside the intake zone.
+  /<!--/ && /-->/         { next }                    # single-line <!-- ... -->
+  /<!--/                  { in_comment=1; next }
+  /-->/                   { in_comment=0; next }
+  in_comment              { next }
+  { print }
 ' KANBAN.md)"
 
 if [[ -z "$(printf '%s' "$INTAKE" | tr -d '[:space:]')" ]]; then
