@@ -45,11 +45,14 @@ Examples:
    cluster: <cluster or "->
    created: <today>
    status: draft
+   reference-fork: none
+   subitems: false
+   testable-surface: none
    ---
    ```
-   `id` / `title` / `tag` / `cluster` are verbatim from the step-2 fields. `created:` is **today's date** (`date +%F`) — KANBAN.md stores no creation date, and the field records when *this spec doc* was written, which is today.
+   `id` / `title` / `tag` / `cluster` are verbatim from the step-2 fields. `created:` is **today's date** (`date +%F`) — KANBAN.md stores no creation date, and the field records when *this spec doc* was written, which is today. The optional fields (`reference-fork`, `subitems`, `testable-surface`) default to the safe values above; interactive mode leaves them for the spec author to update, `--auto` populates them per the rules below.
 7. **Title heading** in the template: replace `# <Title>` with `# ${title}` (no cluster marker).
-8. **Keep the rest** (Context / Acceptance Criteria / Out of Scope / References / Notes) verbatim — the spec author fills it in. *(In `--auto` mode the agent fills the body instead — see **Autonomous mode (`--auto`)** below.)*
+8. **Keep the rest** verbatim — the spec author fills it in. The template's body sections are: Context, Acceptance Criteria, Out of Scope, **Reference Fork** (Cherry #7), **Testable Surfaces** (Cherry #1), **Sub-Items** (Cherry #6), References, Notes. *(In `--auto` mode the agent fills the body instead — see **Autonomous mode (`--auto`)** below.)*
 9. **`Write`** the filled spec to the target path.
 10. **Update KANBAN.md**:
     - Rebuild the note field for the item row:
@@ -87,6 +90,9 @@ Examples:
 - **Context** — why the item exists, who's affected, where the demand comes from (2–3 sentences).
 - **Acceptance Criteria** — measurable, verifiable, no "how". Derived from the title/note + codebase context.
 - **Out of Scope** — explicit non-goals that prevent scope creep.
+- **Reference Fork** (Cherry #7) — answer the "is there an OSS project to fork as starting-point?" question. If yes, set `reference-fork: <url>` in frontmatter and fill the section. If no, set `reference-fork: none` and write one sentence why. If genuinely unclear, omit the picked answer and add a `## Decisions` entry (see below).
+- **Testable Surfaces** (Cherry #1) — identify the modules/files whose business logic *must* have unit tests (alloc-free, lock-free, pure-function-shaped). Update frontmatter `testable-surface:` to the comma-separated paths, or `none` for docs/config-only items.
+- **Sub-Items** (Cherry #6) — fill *only* when the item is too coarse for one worktree (rare). If filled, set `subitems: true` and list the sub-items. Default: leave the section out, frontmatter stays `subitems: false`.
 - **References** — code pointers (`skills/<name>/SKILL.md:NN`), linked items, prior specs.
 - **Notes** — constraints, edge cases, assumptions worth flagging.
 - **Verification** — leave the template placeholder untouched (`/ticket-flow:finish` fills it).

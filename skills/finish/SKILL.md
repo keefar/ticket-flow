@@ -31,6 +31,16 @@ Before merge:
 - For UI changes: `Skill(superpowers:verification-before-completion)` — requires real browser verification, not just a code check
 - For specs with ACs: walk through each AC, confirm it's met
 
+**Testable-surface gate (Cherry #1, spec frontmatter `testable-surface:`)** — when the spec lists testable-surface paths (anything other than `none`):
+
+1. Split the comma-separated list into entries.
+2. For each entry, check the repo for a matching test file. Acceptable patterns:
+   - For `path/to/Foo.swift` → `path/to/FooTests.swift`, `Tests/.../FooTests.swift`, or any file containing `Foo` under a `tests/`/`Tests/`/`__tests__/`/`spec/` directory
+   - For a module name (no path separator) → any test file with that name as a substring under a test directory
+3. **Block close** if any entry has no matching test file. Report which surface is missing tests; the user must either add a test or downgrade the surface declaration (rare — surface should not be removed just to unblock).
+
+`/finish` only enforces — it does not auto-generate tests. If the spec says `testable-surface: none`, no check.
+
 **Classify as you go** — for each AC and check, note whether it is now *proven* (typecheck/test green, a command whose success proves the outcome, mechanical correctness) or *residual* (needs human eyes: function, design, preference, subjective quality, environment-specific behavior). This classification drives the gating decision and the verification checklist in step 6.
 
 ### 3. Review (optional, depending on item size)

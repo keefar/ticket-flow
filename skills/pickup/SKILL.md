@@ -38,6 +38,29 @@ grep -nE "^\| ${id} \|" KANBAN.md
 - Note must not contain `spec: pending`, `decision: open`, or `blocked by:`
 - For `feature` or larger `change`: the note must contain `[Spec](docs/specs/...)` — otherwise warn but do not abort (user-override possible)
 
+### 2.5. Read spec frontmatter (when a spec exists)
+
+Parse the spec's YAML frontmatter (`docs/specs/<id>-<slug>.md`) and capture three optional fields:
+
+- **`reference-fork:` (Cherry #7)** — URL or `none`. If a URL is set, ask the user:
+  ```
+  Reference fork specified: <url>
+  Initialize the worktree with this OSS project as the starting commit?
+  [Y]es — git clone <url> into the worktree dir, then `git checkout -b <branch>`
+  [N]o  — proceed with normal worktree creation (default if `--auto` or no answer)
+  ```
+  Skip the prompt in non-interactive contexts (subagent spawn, `--auto`-style flags downstream); default `N`.
+- **`subitems:` (Cherry #6)** — `true` or `false`. If `true`, the spec lists sub-items in a `## Sub-Items` section as `<id>.<n>` (e.g. `94.1`, `94.2`). Ask:
+  ```
+  Item #<id> has <N> sub-items.
+  [1] Pick all sequentially with auto-chain after /finish (default)
+  [2] Pick .1 only — manual /pickup for the rest
+  ```
+  When sub-items are picked one at a time, `/finish` writes an auto-chain pointer for the next sub-item.
+- **`testable-surface:` (Cherry #1)** — comma-separated paths or `none`. *Don't act on it here* — only `/finish` enforces. But log it in step 7's report so the implementer remembers.
+
+Missing spec or frontmatter (Mode B / spec-less items): skip this step silently.
+
 ### 3. Build the branch name
 
 - With EnterWorktree: `name = <id>-<slug>` (the tool prepends `worktree-`), actual branch = `worktree-<id>-<slug>`
@@ -81,6 +104,8 @@ When in doubt: ask the user.
 Branch: <branch>
 Worktree: <path>
 Plan: <plan-path> (or "not present — see recommendations above")
+Testable surface: <comma-separated paths>   # only when spec says testable-surface != none — /finish will block close without tests
+Sub-items: <picked-strategy>                  # only when subitems: true was resolved in step 2.5
 
 Next steps:
 1. cd <worktree>

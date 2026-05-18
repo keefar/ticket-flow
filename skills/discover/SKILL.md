@@ -35,13 +35,24 @@ Adapted from [Weselow Claude-Protocol's `/project-discovery`](https://github.com
 
 ## Steps
 
-1. **Detect git root**. If not in a git repo, abort with hint.
-2. **Read manifests** — for each file in the list above, parse if present. Record stack + versions.
-3. **Sample source files** — pick 20 files (mix of folders), grep for naming conventions.
-4. **Read CLAUDE.md / AGENTS.md / README.md** if present — extract any rules/conventions sections, summarize.
-5. **Detect test setup** — look for `Tests/`, `tests/`, `__tests__/`, `test/`, `spec/` directories + test framework imports.
-6. **Compose** `docs/PROJECT-CONVENTIONS.md` with the sections above.
-7. **Print path + summary** of what was discovered.
+The skill is a thin wrapper around `skills/discover/discover.sh`. The script:
+
+1. Detects git root (aborts if not a git repo).
+2. Reads manifests (`package.json`, `Cargo.toml`, `pyproject.toml`, `go.mod`, `Package.swift`, `Gemfile`, `composer.json`, `pom.xml`, `build.gradle`, `*.csproj`, `mix.exs`, `Makefile`, `Dockerfile`) and extracts versions where parseable (jq for `package.json`; grep for the rest).
+3. Counts top file extensions via `git ls-files`, samples up to 10 basenames per non-noise extension to surface naming conventions.
+4. Reads `CLAUDE.md` / `AGENTS.md` / `README.md` — emits a line per file with section headers, and pulls "DO NOT / never / avoid" lines as the anti-pattern list.
+5. Detects `Tests/`, `tests/`, `__tests__/`, `test/`, `spec/` directories + counts test-shaped files (`*_test.*`, `*Tests.*`, etc.) via a single `git ls-files | grep -E` pass.
+6. Writes `docs/PROJECT-CONVENTIONS.md` via a `.tmp` file (atomic move).
+
+Invocation pattern:
+
+```bash
+"${CLAUDE_PLUGIN_ROOT}/skills/discover/discover.sh"           # write docs/PROJECT-CONVENTIONS.md
+"${CLAUDE_PLUGIN_ROOT}/skills/discover/discover.sh" --force   # overwrite without prompt
+"${CLAUDE_PLUGIN_ROOT}/skills/discover/discover.sh" --stdout  # print, don't write
+```
+
+Sandbox-safe (no network, only writes the output doc).
 
 ## When to run
 
