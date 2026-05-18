@@ -12,7 +12,15 @@ All paths are relative to the project root (cwd / `git rev-parse --show-toplevel
 **Archive**: `KANBAN-done.md` — only on explicit demand.
 **Spec template**: `docs/specs/SPEC-TEMPLATE.md` — template for item specs.
 
-**bd Sync (pilot)**: if `.beads/issues.jsonl` exists, every Kanban change is also mirrored in bd (see **bd Sync** section below). Mapping `kanban# → bd-id`: `.beads/kanban-bd-mapping.json`.
+**Mode-aware behavior** (per `docs/architecture.md`):
+
+- **Mode A** (`.beads/` present, default for this repo): bd is the source of truth, KANBAN.md is generated. Use `skills/kanban/kanban-render.sh` to regenerate from bd state — preserves the hand-editable intake zone (`<!-- INTAKE:START -->` ... `<!-- INTAKE:END -->`).
+  - `kanban-render.sh --stdout` — preview without writing
+  - `kanban-render.sh --check` — exit 1 if KANBAN.md drifts from bd
+  - `kanban-render.sh` — write KANBAN.md (creates `KANBAN.md.bak` when overwriting would drop more than 3 rows)
+- **Mode B** (no `.beads/`): KANBAN.md is the source of truth — the rest of this skill applies verbatim.
+
+**bd Sync (pilot, superseded by Mode A in `.beads/` projects)**: the historical pilot kept KANBAN.md primary and mirrored to bd; per `docs/specs/8-beads-first-architecture.md` this is replaced by Mode A (renderer-driven). Mapping `kanban# → bd-id`: `.beads/kanban-bd-mapping.json`.
 
 ## Workflow commands (Ticket-Flow)
 
