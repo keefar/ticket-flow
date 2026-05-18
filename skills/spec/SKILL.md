@@ -95,7 +95,29 @@ echo "✓ /ticket-flow:spec for #$ID dispatched to Ghostty tab (UUID: $TAB_UUID)
 7. **Title heading** in the template: replace `# <Title>` with `# ${title}` (no cluster marker).
 8. **Keep the rest** verbatim — the spec author fills it in. The template's body sections are: Context, Acceptance Criteria, Out of Scope, **Reference Fork** (Cherry #7), **Testable Surfaces** (Cherry #1), **Sub-Items** (Cherry #6), References, Notes. *(In `--auto` mode the agent fills the body instead — see **Autonomous mode (`--auto`)** below.)*
 9. **`Write`** the filled spec to the target path.
-10. **Update KANBAN.md**:
+10. **Surface the spec link + status marker** — mode-aware:
+
+    **Mode A** (`.beads/` present) — write to bd, then re-render KANBAN.md:
+
+    ```bash
+    source "${CLAUDE_PLUGIN_ROOT}/skills/kanban/bd-helper.sh"
+    BD_ID="$(bd_id_for "$ID")"
+    if [[ -n "$BD_ID" ]]; then
+      bd_update_notes_replace_prefix "$BD_ID" "[Spec]" "[Spec](docs/specs/${ID}-${SLUG}.md)"
+      # Status marker: `spec: drafting (<author>)` for interactive, `spec: review` for --auto.
+      if [[ "$USE_AUTO" -eq 1 ]]; then
+        bd_update_notes_replace_prefix "$BD_ID" "spec:" "spec: review"
+      else
+        bd_update_notes_replace_prefix "$BD_ID" "spec:" "spec: drafting (${AUTHOR:-chris})"
+      fi
+    fi
+    "${CLAUDE_PLUGIN_ROOT}/skills/kanban/kanban-render.sh"
+    ```
+
+    The merge-safe `bd_update_notes_replace_prefix` wrappers preserve any other notes (e.g. `branch:` from a prior /pickup, `[Verify]` from a prior /finish).
+
+    **Mode B** (no `.beads/`) — hand-edit KANBAN.md:
+
     - Rebuild the note field for the item row:
       - Keep existing pipe sub-fields (e.g. `[Plan](...)` links, `branch:` lock)
       - Remove the `spec: pending` marker if present

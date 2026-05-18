@@ -46,9 +46,13 @@ cd "$ROOT" || exit 1
 # Extract intake zone. Skip nested HTML comments (`<!-- ... -->`) — they're
 # documentation, not intake. Blank lines inside a comment would otherwise be
 # treated as block separators and the comment text as block content.
+#
+# Markers must be anchored at start-of-line (^…$) so quoted-as-example
+# occurrences elsewhere in KANBAN.md (e.g. header prose explaining the marker)
+# don't trigger the toggle. Real markers stand alone on their own line.
 INTAKE="$(awk '
-  /<!-- INTAKE:START -->/ { in_block=1; next }
-  /<!-- INTAKE:END -->/   { in_block=0; next }
+  /^<!-- INTAKE:START -->$/ { in_block=1; next }
+  /^<!-- INTAKE:END -->$/   { in_block=0; next }
   !in_block { next }
   # Skip nested HTML comments while inside the intake zone.
   /<!--/ && /-->/         { next }                    # single-line <!-- ... -->
@@ -84,6 +88,15 @@ if (( ${#BLOCKS[@]} == 0 )); then
 fi
 
 echo "Found ${#BLOCKS[@]} intake block(s)."
+
+# Resolve the next-free kanban-N. New beads get a stable kanban# so the renderer
+# can address them by `#N` in the table instead of falling back to the bd-id suffix.
+NEXT_KANBAN_N=1
+if command -v jq >/dev/null 2>&1; then
+  MAX_N="$(bd list --json 2>/dev/null \
+    | jq -r '[.[] | (.labels // [])[] | select(startswith("kanban-")) | sub("^kanban-"; "") | tonumber? // empty] | max // 0' 2>/dev/null)"
+  [[ -n "$MAX_N" ]] && NEXT_KANBAN_N=$((MAX_N + 1))
+fi
 
 declare -a CREATED_IDS
 declare -a SKIPPED_BLOCKS
@@ -140,20 +153,24 @@ for block in "${BLOCKS[@]}"; do
     continue
   fi
 
-  # Build the bd create command. Description optional, --label intake adds the kanban-Inbox marker.
+  # Build the bd create command. Description optional, --label intake adds the kanban-Inbox marker,
+  # --label=kanban-<N> gives the renderer a stable # to address the item by.
+  ASSIGNED_KANBAN_N="$NEXT_KANBAN_N"
+  NEXT_KANBAN_N=$((NEXT_KANBAN_N + 1))
   declare -a CMD=(bd create
     --title="$TITLE"
     --type="$BD_TYPE"
     --priority="$PRIORITY"
     --label=intake
     --label=intake-pulled
+    --label="kanban-$ASSIGNED_KANBAN_N"
   )
   [[ -n "$DESCRIPTION" ]] && CMD+=(--description="$DESCRIPTION")
 
   if OUT="$("${CMD[@]}" 2>&1)"; then
     NEW_ID="$(printf '%s' "$OUT" | grep -oE 'ticket-flow-[a-z0-9]+' | head -1)"
     if [[ -n "$NEW_ID" ]]; then
-      CREATED_IDS+=("$NEW_ID  ($TITLE)")
+      CREATED_IDS+=("kanban-$ASSIGNED_KANBAN_N = $NEW_ID  ($TITLE)")
       PULLED_BLOCKS+=("$block")
       # Optional: add blocked-by edges.
       if [[ -n "$BLOCKS_LIST" ]]; then

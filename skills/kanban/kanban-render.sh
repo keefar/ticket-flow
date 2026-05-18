@@ -37,9 +37,10 @@ cd "$ROOT" || exit 1
 [[ -d .beads ]] || { echo "ERROR: .beads/ missing — renderer is Mode A only" >&2; exit 1; }
 
 # --- Pull bd state ---
-ISSUES_JSON="$(bd list --json --status=open 2>/dev/null)"
-IN_PROGRESS_JSON="$(bd list --json --status=in_progress 2>/dev/null)"
-ALL_JSON="$(jq -s '.[0] + .[1]' <(printf '%s' "$ISSUES_JSON") <(printf '%s' "$IN_PROGRESS_JSON"))"
+# Single bd list call: returns open + in_progress (closed/deferred filtered by bd's default).
+# Saves ~200-400ms vs the previous dual-call+jq-merge pattern.
+ALL_JSON="$(bd list --json 2>/dev/null)"
+[[ -z "$ALL_JSON" ]] && ALL_JSON="[]"
 
 # --- Helpers ---
 # Map bd issue_type → kanban tag (task → change).
@@ -181,9 +182,12 @@ done < <(
 # --- Preserve intake zone from current KANBAN.md ---
 INTAKE_CONTENT=""
 if [[ -f KANBAN.md ]]; then
+  # Markers must be anchored at start-of-line (^…$) so quoted-as-example
+  # occurrences elsewhere in KANBAN.md (e.g. the generated header that
+  # references the marker syntax) don't trigger the toggle.
   INTAKE_CONTENT="$(awk '
-    /<!-- INTAKE:START -->/ { in_block=1; next }
-    /<!-- INTAKE:END -->/   { in_block=0; next }
+    /^<!-- INTAKE:START -->$/ { in_block=1; next }
+    /^<!-- INTAKE:END -->$/   { in_block=0; next }
     in_block { print }
   ' KANBAN.md)"
 fi

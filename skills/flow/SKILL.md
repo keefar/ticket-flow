@@ -143,7 +143,9 @@ Skip in --local (the default): classic mode doesn't clean anything (no spawn →
 
 Before pickup, check whether the item's spec still has design decisions that need a human pick.
 
-1. **Find the spec**: from KANBAN.md, the `[Spec](docs/specs/<id>-<slug>.md)` link in the `<id>` row's note. No spec link → no gate, continue to step 2.
+1. **Find the spec** — mode-aware:
+   - **Mode A** (`.beads/` present): source `skills/kanban/bd-helper.sh`; `BD_ID="$(bd_id_for "$ID")"`; `SPEC_PATH="$(bd_get_notes "$BD_ID" | grep -oE '\[Spec\]\([^)]+\)' | head -1 | sed 's/^\[Spec\](\(.*\))$/\1/')"`. Fallback to convention `docs/specs/<id>-*.md` (first match) when notes are empty. No spec found → no gate, continue.
+   - **Mode B**: the `[Spec](docs/specs/<id>-<slug>.md)` link in the `<id>` row's note in KANBAN.md. No spec link → no gate, continue to step 2.
 2. **Read the spec.** Does it have a `## Decisions` section with `### D1…` entries?
    - **No `## Decisions` section** → nothing to resolve, continue to step 2.
    - **`## Decisions` present AND a `## Decision Log` that covers every `D#`** → already resolved (locked via the `/ticket-flow:spec` review step), continue to step 2.
@@ -276,15 +278,30 @@ On OK: `Skill(ticket-flow:finish)`. On failure: stop, inform the user. No auto r
 
 ### 7. Final report (only when --local)
 
+In **Mode A**, after `/finish` closes the bd state, refresh the report from bd rather than re-reading KANBAN.md:
+
+```bash
+source "${CLAUDE_PLUGIN_ROOT}/skills/kanban/bd-helper.sh"
+BD_ID="$(bd_id_for "$ID")"
+BD_STATUS="$(bd show "$BD_ID" --json 2>/dev/null | jq -r '.[0].status')"
+BD_LABELS="$(bd show "$BD_ID" --json 2>/dev/null | jq -r '.[0].labels // [] | join(",")')"
+```
+
+Then format:
+
 ```
 ✓ /ticket-flow:flow --local for #<id> complete
 
 Pickup: ✓ branch <branch> + worktree
 Implement: ✓ <count> commits + typecheck/test green
-Finish: ✓ merge to main + deploy <version> + Kanban → Testing
+Finish: ✓ merge to main + deploy <version>
+Bd state: <BD_STATUS> · labels: <BD_LABELS>   # Mode A only
+Kanban → Testing                              # Mode B equivalent
 
 Manual verification pending.
 ```
+
+In **Mode B** the original KANBAN.md → Testing wording is correct verbatim.
 
 ## What it doesn't do
 
