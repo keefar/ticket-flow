@@ -18,6 +18,8 @@ All paths are relative to the project root (cwd / `git rev-parse --show-toplevel
   - `kanban-render.sh --stdout` — preview without writing
   - `kanban-render.sh --check` — exit 1 if KANBAN.md drifts from bd
   - `kanban-render.sh` — write KANBAN.md (creates `KANBAN.md.bak` when overwriting would drop more than 3 rows)
+- **Intake pull** (`skills/kanban/intake-pull.sh`): in Mode A, the user writes free-form ideas into the intake zone (block grammar in `KANBAN.md` between the INTAKE markers). The pull script parses each block, creates a bd issue per block (mapping `tag:` → bd issue_type), and clears the zone (un-pullable blocks stay for human review). Workflow: write idea → `intake-pull.sh --dry-run` (verify parse) → `intake-pull.sh` (commit to bd) → `kanban-render.sh` (re-render KANBAN.md).
+- **bd-helper** (`skills/kanban/bd-helper.sh`): shared functions sourced by Mode-aware skills (`pickup`, `finish`). Exposes `bd_available`, `bd_mode`, `bd_id_for <kanban#>`, `bd_kanban_for <bd-id>`, `bd_set_status <bd-id> inbox|backlog|in_progress|testing`. The skills source this helper, branch on `bd_mode`, and in Mode A delegate state transitions to bd + re-render via `kanban-render.sh` instead of editing KANBAN.md directly.
 - **Mode B** (no `.beads/`): KANBAN.md is the source of truth — the rest of this skill applies verbatim.
 
 **bd Sync (pilot, superseded by Mode A in `.beads/` projects)**: the historical pilot kept KANBAN.md primary and mirrored to bd; per `docs/specs/8-beads-first-architecture.md` this is replaced by Mode A (renderer-driven). Mapping `kanban# → bd-id`: `.beads/kanban-bd-mapping.json`.

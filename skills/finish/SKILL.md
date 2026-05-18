@@ -89,13 +89,34 @@ git branch -d <branch>
   - **Item has a spec doc** → write it as a `## Verification` section in `docs/specs/<id>-<slug>.md` (after Acceptance Criteria). Add a `[Verify](docs/specs/<id>-<slug>.md#verification)` pointer to the KANBAN Testing-row note.
   - **Spec-less item** (trivial, inline ACs) → put the (tiny) checklist inline in the KANBAN Testing-row note.
 
-**KANBAN.md update:**
+**KANBAN.md update (mode-aware):**
+
+Source `skills/kanban/bd-helper.sh` and branch:
+
+**Mode A** (`.beads/` present):
+
+```bash
+source "${CLAUDE_PLUGIN_ROOT}/skills/kanban/bd-helper.sh"
+BD_ID="$(bd_id_for "$ID")"
+if [[ -n "$BD_ID" ]]; then
+  # Surface verification pointer in the bd issue (or the inline checklist text).
+  bd update "$BD_ID" --notes="[Verify](docs/specs/<id>-<slug>.md#verification)" >/dev/null
+  if [[ "$HAS_RESIDUAL" == "0" ]]; then
+    bd close "$BD_ID" --reason="verified by /ticket-flow:finish (no residual)"
+  else
+    bd_set_status "$BD_ID" testing
+  fi
+fi
+"${CLAUDE_PLUGIN_ROOT}/skills/kanban/kanban-render.sh"
+```
+
+When a residual exists, `[Verify]` lives in the bd notes field — the renderer surfaces it in the Testing row's note column. When fully proven, the bd issue is closed; the renderer drops it from KANBAN.md and a separate archive workflow (or `bd compact`) handles long-term storage. The `KANBAN-done.md` archive remains a Mode-B-only concept.
+
+**Mode B** (no `.beads/`):
 
 - Remove the item from **In Progress**.
 - **Residual exists** → insert into **Testing** (top); **no residual** → append to `KANBAN-done.md` instead (skip Testing).
 - Update the note: remove the `branch:` marker; remove `spec: drafting` if present; add the `[Verify]` pointer (or the inline checklist) per above.
-
-**bd surfacing** (when bd is active — `.beads/` present): write the checklist (or the `spec#verification` pointer) into the bd issue so `bd show <id>` shows it — append to the issue description or notes. (The broader bd column-label sync, `in-progress` → `testing`, is deferred to the mode-aware-skills work and is not done here.)
 
 Plus, if a bug log is warranted (multiple hypotheses, algorithmic fix, regression) and not yet present: create `docs/kanban/<id>-title.md` (or the project's equivalent) + link it.
 

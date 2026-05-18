@@ -80,7 +80,26 @@ Missing spec or frontmatter (Mode B / spec-less items): skip this step silently.
 
 **Base ref note**: EnterWorktree defaults to branching from `origin/<default-branch>` — when working on an active feature branch (e.g. `tauri-prototype`), set `worktree.baseRef = "head"` in settings.json or everything since the last main sync is lost.
 
-### 5. Update KANBAN.md
+### 5. Update KANBAN.md (mode-aware)
+
+Source `skills/kanban/bd-helper.sh` and branch on `bd_mode`:
+
+**Mode A** (`.beads/` present):
+
+```bash
+source "${CLAUDE_PLUGIN_ROOT}/skills/kanban/bd-helper.sh"
+BD_ID="$(bd_id_for "$ID")"
+if [[ -n "$BD_ID" ]]; then
+  bd_set_status "$BD_ID" in_progress
+  # Record the branch lock as a bd note (idempotent — overwrites prior).
+  bd update "$BD_ID" --notes="branch: $BRANCH" >/dev/null
+fi
+"${CLAUDE_PLUGIN_ROOT}/skills/kanban/kanban-render.sh"
+```
+
+The renderer regenerates KANBAN.md from bd state — branch lock surfaces in the note via the bd notes field. No direct KANBAN.md edit.
+
+**Mode B** (no `.beads/`):
 
 - **Note**: insert `branch: <branch>` as a pipe sub-field (before any other markers)
 - **Section**: remove the item from the Backlog table, insert into the In Progress table (top, or by date)
