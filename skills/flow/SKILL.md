@@ -1,38 +1,42 @@
 ---
 name: flow
-description: Orchestrator for Ticket-Flow — runs /ticket-flow:pickup here, then by default spawns /ticket-flow:implement → auto /ticket-flow:finish in a new Ghostty tab so this session stays free. Pass --local for classic in-session per-phase-checkpoint flow. Invoke as `/ticket-flow:flow <kanban-id>` or `/ticket-flow:flow cleanup` to sweep finished spawns.
+description: Orchestrator for Ticket-Flow — default is `--local` (all phases in this session with user checkpoints). Pass `--spawn` to spawn /ticket-flow:implement → auto /ticket-flow:finish in a new Ghostty tab (currently broken on Ghostty 1.3.1, see ticket-flow-k9h — use --local until fixed). Invoke as `/ticket-flow:flow <kanban-id>` or `/ticket-flow:flow cleanup` to sweep finished spawns.
 ---
 
 # /flow — Ticket-Flow orchestrator
 
 **Args**:
-- Spawn mode: `<kanban-id>` (required) · `<branch-suffix>` (optional, forwarded to /pickup) · `--local` (optional, opt-in for classic mode) · `--decisions a,b,c` / `--use-recommendations` (optional, mutually exclusive — resolve the spec's `## Decisions` section; apply in spawn **and** `--local` mode; see step 1.6).
+- Run mode: `<kanban-id>` (required) · `<branch-suffix>` (optional, forwarded to /pickup) · `--spawn` (optional, opt-in for Ghostty spawn mode; **currently broken on Ghostty 1.3.1 — see ticket-flow-k9h**) · `--local` (optional, **now the default** — kept as explicit flag for symmetry) · `--decisions a,b,c` / `--use-recommendations` (optional, mutually exclusive — resolve the spec's `## Decisions` section; apply in both modes; see step 1.6).
 - Cleanup mode: first arg `cleanup`, optional `<kanban-id>` for selective sweep, optional `--stale` to also remove stale-running entries (tab gone, status never reached done/error), optional `--dry-run` for report-only.
+
+## Default change — 2026-05-18
+
+Until 2026-05-18, the default mode was **spawn**. After a live test surfaced a Ghostty 1.3.1 AppleScript regression (`ticket-flow-k9h`) that breaks `input text` on AS-created tabs, the default flipped to **--local**. The spawn path is preserved (`--spawn` opt-in) so it can be re-tested when Ghostty fixes the regression.
 
 ## What it does
 
-**Default (`/ticket-flow:flow <id>`)**: pickup runs here (seconds). Then a new Ghostty tab spawns inside the worktree with its own Claude instance, which runs `Skill(ticket-flow:implement)` and on success automatically triggers `Skill(ticket-flow:finish)`. The orchestrator session is immediately free again for `/ticket-flow:spec`, more `/ticket-flow:flow` calls, or chat.
+**Default (`/ticket-flow:flow <id>`)** — *now equivalent to --local*: all three phases run sequentially in this session with user checkpoints between phases.
 
-**Classic (`/ticket-flow:flow <id> --local`)**: all three phases run sequentially in this session with user checkpoints between phases.
+**Spawn (`/ticket-flow:flow <id> --spawn`)** — opt-in: pickup runs here (seconds). Then a new Ghostty tab spawns inside the worktree with its own Claude instance, which runs `Skill(ticket-flow:implement)` and on success automatically triggers `Skill(ticket-flow:finish)`. **Broken on Ghostty 1.3.1** — falls back to --local with a warning.
 
 ```
-DEFAULT:
+DEFAULT (--local):
+/ticket-flow:pickup <id>  →  CHECKPOINT  →  /ticket-flow:implement  →  CHECKPOINT  →  /ticket-flow:finish
+
+SPAWN (--spawn, when Ghostty 1.3.0 / future fixed version):
 /ticket-flow:pickup <id>  →  spawn-ghostty.sh  →  [tab runs autonomously]
                                            └─ /ticket-flow:implement → if ok → /ticket-flow:finish
-
-LOCAL:
-/ticket-flow:pickup <id>  →  CHECKPOINT  →  /ticket-flow:implement  →  CHECKPOINT  →  /ticket-flow:finish
 ```
 
 For fine-grained control: invoke `/ticket-flow:pickup`, `/ticket-flow:implement`, `/ticket-flow:finish` directly.
 
-## Prerequisites (for default mode)
+## Prerequisites (for --spawn mode only)
 
-- **Ghostty 1.3+** must be installed
-- **Claude Code must run INSIDE Ghostty** (`$TERM_PROGRAM == "ghostty"`). `spawn-ghostty.sh` checks this before anything else and exits with a clear error when /flow is invoked from iTerm/Terminal.app/etc. Workaround: `--local` flag.
+- **Ghostty 1.3.0** (not 1.3.1) must be installed — `ticket-flow-k9h` tracks the 1.3.1 regression; until upstream fixes, --spawn auto-falls-back to --local
+- **Claude Code must run INSIDE Ghostty** (`$TERM_PROGRAM == "ghostty"`). `spawn-ghostty.sh` checks this before anything else and exits with a clear error when /flow is invoked from iTerm/Terminal.app/etc.
 - **AppleScript permission** for the terminal app (or Claude Code) that invokes `/flow` so it can drive Ghostty. The first invocation triggers a macOS dialog → click OK once. If denied: System Settings → Privacy & Security → Automation → Terminal/Claude Code → enable Ghostty.
 
-If Ghostty is missing, the terminal check fails, or permission is denied: `/ticket-flow:flow` shows a clear error message plus a hint to `--local`.
+If Ghostty is missing, the terminal check fails, or permission is denied, or the 1.3.1 regression bites: `--spawn` reports a clear error and falls back to --local automatically.
 
 ## Steps
 
@@ -61,7 +65,7 @@ Examples:
 - `/ticket-flow:flow cleanup --stale` — additionally sweep stale-running entries (tab gone)
 - `/ticket-flow:flow cleanup --dry-run` — list only, no action
 
-### 0.5. Capture spawning tab id (default mode only, #9s3)
+### 0.5. Capture spawning tab id (--spawn mode only, #9s3)
 
 Capture the id of the currently-selected Ghostty tab — the tab that *invoked* /flow. This must run as the **very first step**, before pickup (which can take seconds) and before the user might click another tab. Pass it later to `spawn-ghostty.sh` so the new spawn tab lands directly behind the spawning tab regardless of where the user clicked in the meantime.
 
@@ -69,30 +73,33 @@ Best-effort: AppleScript denied, not running in Ghostty, or no front window → 
 
 ```bash
 SPAWNING_TAB_ID=""
-if [[ "$LOCAL" -eq 0 && "${TERM_PROGRAM:-}" == "ghostty" ]]; then
+if (( USE_SPAWN == 1 )) && [[ "${TERM_PROGRAM:-}" == "ghostty" ]]; then
   SPAWNING_TAB_ID="$(osascript -e 'tell application "Ghostty" to id of selected tab of front window' 2>/dev/null || true)"
   SPAWNING_TAB_ID="${SPAWNING_TAB_ID//$'\n'/}"
 fi
 ```
 
-Skip silently if `--local` (no spawn anyway).
+Skip silently in --local (the new default) — no spawn anyway.
 
 ### 1. Parse args
 
 - `<kanban-id>` (required) — e.g. `96`
 - `<branch-suffix>` (optional) — e.g. `mainsline`
-- `--local` flag (optional, position-independent)
+- `--local` flag (optional, position-independent) — the **default since 2026-05-18**; kept as explicit flag for clarity
+- `--spawn` flag (optional, position-independent) — opt-in for Ghostty-tab spawn mode (currently broken on Ghostty 1.3.1, falls back to --local with warning)
 
 ```bash
 ID=""
 SUFFIX=""
-LOCAL=0
+LOCAL=1            # default: --local (changed 2026-05-18, see ticket-flow-k9h)
+USE_SPAWN=0
 DECISIONS=""        # comma-separated option numbers, positional → D1,D2,…
 USE_RECS=0
 prev=""
 for arg in "$@"; do
   case "$arg" in
-    --local)               LOCAL=1 ;;
+    --local)               LOCAL=1; USE_SPAWN=0 ;;
+    --spawn)               USE_SPAWN=1; LOCAL=0 ;;
     --use-recommendations) USE_RECS=1 ;;
     --decisions)           ;;                       # value is the next arg
     --decisions=*)         DECISIONS="${arg#*=}" ;;
@@ -109,9 +116,18 @@ if [[ -n "$DECISIONS" && "$USE_RECS" -eq 1 ]]; then
   echo "❌ --decisions and --use-recommendations are mutually exclusive" >&2
   exit 1
 fi
+# --spawn auto-fallback on known-broken Ghostty versions
+if (( USE_SPAWN )); then
+  GHOSTTY_VER="$(defaults read /Applications/Ghostty.app/Contents/Info.plist CFBundleShortVersionString 2>/dev/null || echo unknown)"
+  if [[ "$GHOSTTY_VER" == "1.3.1" ]]; then
+    echo "⚠ Ghostty 1.3.1 has an AppleScript regression (ticket-flow-k9h) — falling back to --local" >&2
+    USE_SPAWN=0
+    LOCAL=1
+  fi
+fi
 ```
 
-### 1.5. Pre-spawn cleanup (default mode)
+### 1.5. Pre-spawn cleanup (--spawn mode only)
 
 BEFORE pickup: invoke `flow-cleanup.sh` once (no args) in the main repo. Cleans up finished predecessor tabs (`status: done`) — worktree, branch, status file are removed, the associated Ghostty tab is closed via AppleScript (`close terminal id "<UUID>"` bypasses `confirm-close-surface`).
 
@@ -121,7 +137,7 @@ BEFORE pickup: invoke `flow-cleanup.sh` once (no args) in the main repo. Cleans 
 
 Cleanup is non-fatal: even when there's nothing to clean (fresh start) or individual items are "unmerged" / "error", the skill runs through and reports. Output is shown to the user, then on to pickup.
 
-Skip if `--local`: classic mode doesn't clean anything (no spawn → no tab leftovers).
+Skip in --local (the default): classic mode doesn't clean anything (no spawn → no tab leftovers).
 
 ### 1.6. Decision gate (spawn + `--local`)
 
@@ -178,11 +194,11 @@ cd "$WORKTREE" && git add docs/specs/<id>-<slug>.md \
 
 The spawned (or `--local`) `/ticket-flow:implement` then reads a spec whose decisions are already locked — no flag needs to cross the spawn boundary.
 
-### 3. Branching: default spawn or --local
+### 3. Branching: --local (default) or --spawn
 
-**If `--local` is set** → continue with step 4 (classic flow).
+**If `--local` (default) or --spawn auto-fell-back** → continue with step 4 (classic per-phase-checkpoint flow).
 
-**Otherwise (default)**:
+**If `--spawn` is set AND not auto-fell-back**:
 
 ```bash
 TAB_UUID="$("${CLAUDE_PLUGIN_ROOT}/skills/flow/spawn-ghostty.sh" "$WORKTREE" "$ID" "$SPAWNING_TAB_ID")"

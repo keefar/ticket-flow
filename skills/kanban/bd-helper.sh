@@ -62,6 +62,79 @@ bd_kanban_for() {
   return 1
 }
 
+# Read the current notes field of a bd issue (empty string if unset).
+# Uses --json so multi-line values survive. `bd show --json` returns a list;
+# the issue is at index 0.
+bd_get_notes() {
+  local bd_id="$1"
+  [[ -z "$bd_id" ]] && return 1
+  bd_available || return 1
+  command -v jq >/dev/null 2>&1 || return 1
+  bd show "$bd_id" --json 2>/dev/null | jq -r '.[0].notes // ""' 2>/dev/null
+}
+
+# Append a line to a bd issue's notes (read-merge-write), so existing notes
+# survive. Skips the write when the line is already present (idempotent).
+#
+# Usage: bd_update_notes_append <bd-id> <line>
+bd_update_notes_append() {
+  local bd_id="$1"
+  local line="$2"
+  [[ -z "$bd_id" || -z "$line" ]] && return 1
+  bd_available || return 1
+  local current
+  current="$(bd_get_notes "$bd_id")"
+  # Idempotent: if the exact line is already in notes, no-op.
+  if [[ -n "$current" ]] && printf '%s\n' "$current" | grep -qF -- "$line"; then
+    return 0
+  fi
+  local merged
+  if [[ -n "$current" ]]; then
+    merged="${current}"$'\n'"${line}"
+  else
+    merged="$line"
+  fi
+  bd update "$bd_id" --notes="$merged" >/dev/null 2>&1
+}
+
+# Replace the line in a bd issue's notes that starts with the given prefix
+# (e.g. `branch:`). If no such line exists, append. Other lines survive.
+#
+# Usage: bd_update_notes_replace_prefix <bd-id> <prefix> <new-full-line>
+# Example: bd_update_notes_replace_prefix ticket-flow-abc "branch:" "branch: worktree-94-foo"
+bd_update_notes_replace_prefix() {
+  local bd_id="$1"
+  local prefix="$2"
+  local new_line="$3"
+  [[ -z "$bd_id" || -z "$prefix" ]] && return 1
+  bd_available || return 1
+  local current
+  current="$(bd_get_notes "$bd_id")"
+  local merged
+  if [[ -z "$current" ]]; then
+    merged="$new_line"
+  else
+    # Drop lines starting with the prefix (anchored start-of-line) and append the new one.
+    # Use awk so we don't depend on grep -P / extended regex differences.
+    merged="$(printf '%s\n' "$current" \
+      | awk -v p="$prefix" 'index($0, p) == 1 { next } { print }')"
+    if [[ -n "$new_line" ]]; then
+      if [[ -n "$merged" ]]; then
+        merged="${merged}"$'\n'"${new_line}"
+      else
+        merged="$new_line"
+      fi
+    fi
+  fi
+  bd update "$bd_id" --notes="$merged" >/dev/null 2>&1
+}
+
+# Remove any line starting with the given prefix from a bd issue's notes.
+# Usage: bd_update_notes_remove_prefix <bd-id> <prefix>
+bd_update_notes_remove_prefix() {
+  bd_update_notes_replace_prefix "$1" "$2" ""
+}
+
 # Transition a bd issue through the canonical kanban states. Idempotent:
 # re-applying the same state is safe.
 #

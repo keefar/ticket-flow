@@ -91,8 +91,9 @@ source "${CLAUDE_PLUGIN_ROOT}/skills/kanban/bd-helper.sh"
 BD_ID="$(bd_id_for "$ID")"
 if [[ -n "$BD_ID" ]]; then
   bd_set_status "$BD_ID" in_progress
-  # Record the branch lock as a bd note (idempotent — overwrites prior).
-  bd update "$BD_ID" --notes="branch: $BRANCH" >/dev/null
+  # Replace any existing `branch: …` line in notes with the new one; preserves
+  # other notes (e.g. [Verify] pointers from prior /finish runs on this id).
+  bd_update_notes_replace_prefix "$BD_ID" "branch:" "branch: $BRANCH"
 fi
 "${CLAUDE_PLUGIN_ROOT}/skills/kanban/kanban-render.sh"
 ```

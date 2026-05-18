@@ -22,7 +22,19 @@ When the `--spawn` flag is present, the skill does **not** run the dialogue in t
 - Wrap script = `skills/flow/spec-wrap.sh` (lighter than `flow-wrap.sh`: static `📝 #<id> spec` title, no status file, no implement/finish chain)
 - Injection = `Skill(spec) <id> [<author>] [--auto]` typed into the new tab after the wrap starts claude
 
-Prerequisites are the same as `/flow`'s spawn mode (Ghostty 1.3+, `$TERM_PROGRAM == "ghostty"`, AppleScript permission). Failures surface as a clear error with a hint to drop `--spawn` for the in-session fallback.
+Prerequisites: Ghostty **1.3.0** (not 1.3.1 — `ticket-flow-k9h`), `$TERM_PROGRAM == "ghostty"`, AppleScript permission.
+
+**Auto-fallback on Ghostty 1.3.1**: before dispatching, check the installed Ghostty version. If 1.3.1, warn and fall back to in-session mode (no spawn):
+
+```bash
+GHOSTTY_VER="$(defaults read /Applications/Ghostty.app/Contents/Info.plist CFBundleShortVersionString 2>/dev/null || echo unknown)"
+if [[ "$GHOSTTY_VER" == "1.3.1" ]]; then
+  echo "⚠ Ghostty 1.3.1 has an AppleScript regression (ticket-flow-k9h) — falling back to in-session /spec" >&2
+  USE_SPAWN=0
+fi
+```
+
+Other failures (no Ghostty, no AS permission) also surface as a clear error with a hint to drop `--spawn` for the in-session fallback.
 
 Step-by-step (only when `--spawn` is set):
 

@@ -99,8 +99,10 @@ Source `skills/kanban/bd-helper.sh` and branch:
 source "${CLAUDE_PLUGIN_ROOT}/skills/kanban/bd-helper.sh"
 BD_ID="$(bd_id_for "$ID")"
 if [[ -n "$BD_ID" ]]; then
-  # Surface verification pointer in the bd issue (or the inline checklist text).
-  bd update "$BD_ID" --notes="[Verify](docs/specs/<id>-<slug>.md#verification)" >/dev/null
+  # Drop the branch-lock line first (set by /pickup) — finish ends worktree life.
+  bd_update_notes_remove_prefix "$BD_ID" "branch:"
+  # Replace any prior [Verify] pointer (e.g. from an earlier finish attempt).
+  bd_update_notes_replace_prefix "$BD_ID" "[Verify]" "[Verify](docs/specs/<id>-<slug>.md#verification)"
   if [[ "$HAS_RESIDUAL" == "0" ]]; then
     bd close "$BD_ID" --reason="verified by /ticket-flow:finish (no residual)"
   else
@@ -110,7 +112,7 @@ fi
 "${CLAUDE_PLUGIN_ROOT}/skills/kanban/kanban-render.sh"
 ```
 
-When a residual exists, `[Verify]` lives in the bd notes field — the renderer surfaces it in the Testing row's note column. When fully proven, the bd issue is closed; the renderer drops it from KANBAN.md and a separate archive workflow (or `bd compact`) handles long-term storage. The `KANBAN-done.md` archive remains a Mode-B-only concept.
+When a residual exists, `[Verify]` lives in the bd notes field alongside any other long-lived metadata — the renderer surfaces it in the Testing row's note column. The notes-replace pattern preserves anything that's *not* prefixed `branch:` or `[Verify]`. When fully proven, the bd issue is closed; the renderer drops it from KANBAN.md and a separate archive workflow (or `bd compact`) handles long-term storage. The `KANBAN-done.md` archive remains a Mode-B-only concept.
 
 **Mode B** (no `.beads/`):
 
