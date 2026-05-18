@@ -14,15 +14,15 @@ All paths are relative to the project root (cwd / `git rev-parse --show-toplevel
 
 **Mode-aware behavior** (per `docs/architecture.md`):
 
-- **Mode A** (`.beads/` present, default for this repo): bd is the source of truth, KANBAN.md is generated. Use `skills/kanban/kanban-render.sh` to regenerate from bd state — preserves the hand-editable intake zone (`<!-- INTAKE:START -->` ... `<!-- INTAKE:END -->`).
-  - `kanban-render.sh --stdout` — preview without writing
-  - `kanban-render.sh --check` — exit 1 if KANBAN.md drifts from bd
-  - `kanban-render.sh` — write KANBAN.md (creates `KANBAN.md.bak` when overwriting would drop more than 3 rows)
-- **Intake pull** (`skills/kanban/intake-pull.sh`): in Mode A, the user writes free-form ideas into the intake zone (block grammar in `KANBAN.md` between the INTAKE markers). The pull script parses each block, creates a bd issue per block (mapping `tag:` → bd issue_type), and clears the zone (un-pullable blocks stay for human review). Workflow: write idea → `intake-pull.sh --dry-run` (verify parse) → `intake-pull.sh` (commit to bd) → `kanban-render.sh` (re-render KANBAN.md).
-- **bd-helper** (`skills/kanban/bd-helper.sh`): shared functions sourced by Mode-aware skills (`pickup`, `finish`). Exposes `bd_available`, `bd_mode`, `bd_id_for <kanban#>`, `bd_kanban_for <bd-id>`, `bd_set_status <bd-id> inbox|backlog|in_progress|testing`. The skills source this helper, branch on `bd_mode`, and in Mode A delegate state transitions to bd + re-render via `kanban-render.sh` instead of editing KANBAN.md directly.
+- **Mode A** (`.beads/` present): bd is the source of truth; KANBAN.md is generated. Don't hand-edit table rows — change bd, then re-render.
 - **Mode B** (no `.beads/`): KANBAN.md is the source of truth — the rest of this skill applies verbatim.
 
-**bd Sync (pilot, superseded by Mode A in `.beads/` projects)**: the historical pilot kept KANBAN.md primary and mirrored to bd; per `docs/specs/8-beads-first-architecture.md` this is replaced by Mode A (renderer-driven). Mapping `kanban# → bd-id`: `.beads/kanban-bd-mapping.json`.
+**Mode A toolbox** (`skills/kanban/`):
+
+- `kanban-render.sh` — regenerate KANBAN.md from bd. `--stdout` preview, `--check` drift-exit-1, default writes (with `.bak` safety if it would drop >3 rows). Preserves the hand-editable intake zone (`<!-- INTAKE:START -->` ... `<!-- INTAKE:END -->`).
+- `intake-pull.sh` — pull free-form blocks from the intake zone into bd issues (one block = one issue). Workflow: write idea → `intake-pull.sh --dry-run` → `intake-pull.sh` → `kanban-render.sh`.
+- `kanban-import.sh` — one-shot Mode B → Mode A migration: parse existing KANBAN.md rows into bd. Idempotent (skips kanban-N labels already in bd).
+- `bd-helper.sh` — sourced by `pickup`, `finish`, and Mode-aware paths in this skill. Exposes `bd_mode`, `bd_id_for <kanban#>`, `bd_set_status`, `bd_update_notes_{append,replace_prefix,remove_prefix}`. State transitions go through `bd_set_status` (canonical inbox / backlog / in_progress / testing) plus `bd close` for Done; notes edits go through the merge-safe wrappers (never `bd update --notes=` directly — that's destructive).
 
 ## Workflow commands (Ticket-Flow)
 
@@ -47,16 +47,18 @@ Direct editing of the Kanban (this skill) is still used for: capturing new items
 
 ## Actions
 
-| Trigger | KANBAN.md action | bd call (when active) |
-|---------|------------------|----------------------|
-| New bug / feature / change | → KANBAN.md Inbox (DoR usually not met yet) | `bd create` + write bd-id to the column + update mapping |
+In **Mode A**, the workflow skills (`/spec`, `/pickup`, `/finish`) drive bd state via `bd-helper.sh`; this skill is only used for the Inbox-intake side. In **Mode B**, the table below is the operational reference.
+
+| Trigger | Mode B action (KANBAN.md) | Mode A equivalent |
+|---|---|---|
+| New bug / feature / change | → Inbox row (DoR usually not met yet) | `intake-pull.sh` from the INTAKE zone, or `bd create --label kanban-<N> --label inbox` |
 | New strategic topic | → ROADMAP.md (epic, later, or parked) | — (roadmap is not in bd) |
-| Inbox item meets DoR | → Backlog at the right priority slot | `bd update <id> --remove-label inbox --add-label backlog` |
-| Agent picked Backlog item | Set `branch: <name>` in note → In Progress | `bd update <id> --remove-label backlog --add-label in-progress --status in_progress` |
-| Deployed / implemented | → Testing **if** a residual needs sign-off (with `[Verify]` checklist), else → Done directly | `bd update <id> --remove-label in-progress --add-label testing --status open` |
-| Verified | Remove row + append to KANBAN-done.md | `bd close <id> --reason "verified"` |
-| Roadmap item becomes concrete | from ROADMAP.md → KANBAN.md Inbox | `bd create` (see row 1) |
-| Dependency identified | `blocked by: #X` in the note | `bd dep add <a> <b>` (a depends on b) |
+| Inbox → Backlog (DoR met) | move row to Backlog at priority slot | `bd_set_status <id> backlog` |
+| Backlog → In Progress (claimed) | set `branch: <name>` in note → In Progress | `/pickup` does it via `bd_set_status in_progress` + `bd_update_notes_replace_prefix "branch:"` |
+| In Progress → Testing | move to Testing with `[Verify]` pointer; or Done if fully proven | `/finish` does it via `bd_set_status testing` + `bd_update_notes_replace_prefix "[Verify]"`, or `bd close` |
+| Verified | remove row + append to `KANBAN-done.md` | `bd close <id> --reason "verified"` (renderer drops it from KANBAN.md) |
+| Roadmap → Inbox | from ROADMAP.md → KANBAN.md Inbox | `bd create` as above |
+| Dependency | `blocked by: #X` in the note | `bd dep add <a> <b>` (a depends on b) |
 
 ## Definition of Ready (Inbox → Backlog)
 
@@ -84,13 +86,12 @@ Exactly the 5 points from KANBAN.md "Workflow Rules":
 ## Format
 
 ```
-| {ID} | `{bd-id}` | `{tag}` | {title} | {note} |
+| {ID} | `{tag}` | {title} | {note} |
 ```
 
-- **ID**: highest existing + 1, **check across KANBAN.md AND ROADMAP.md** (no duplicate IDs)
-- **bd-id**: from `bd create` output (format `<project>-xxx`, e.g. `PROJ-abc`). When bd is inactive: `—`.
+- **ID**: in Mode A, the renderer fills this from the `kanban-<N>` label (or the bd-id suffix when no kanban-N label). In Mode B, highest existing + 1 (check KANBAN.md AND ROADMAP.md for duplicates).
 - **Tags**: `bug` · `change` · `feature` (item type, not status)
-- **Creation date**: not stored in KANBAN.md (recoverable from git log or bd). KANBAN-done.md keeps a `Verified` date column since that's the audit-relevant timestamp.
+- **Creation date**: not stored in KANBAN.md (recoverable from git log or bd). `KANBAN-done.md` (Mode B) keeps a `Verified` date column since that's the audit-relevant timestamp.
 
 ## Cluster markers
 
@@ -140,36 +141,18 @@ Empty note: `—`.
 
 ## Approach
 
-1. `Read` KANBAN.md (hot path). ROADMAP.md only if strategically relevant or for cluster lookup.
-2. Triage: Inbox (DoR missing) vs. Backlog (DoR met) vs. Roadmap (strategic).
-3. Minimal change — only what changed.
-4. Keep the note in pipe format.
-5. Set cluster markers where appropriate.
-6. For bug log / spec / plan: create + link.
-7. **bd sync** (when active): run the matching bd call from the actions table (see **bd Sync** section below).
-8. Short mention in the response: `📋 Kanban: #70 → Testing · bd: PROJ-cbw closed`
+1. **Mode A**: change bd (via `/spec`, `/pickup`, `/finish`, or direct `bd ...` for ad-hoc work) → `kanban-render.sh` to refresh KANBAN.md. Intake-zone-only writes are the exception (preserved across regenerations).
+2. **Mode B**: `Read` KANBAN.md (hot path). ROADMAP.md only if strategically relevant or for cluster lookup. Triage Inbox (DoR missing) vs Backlog (DoR met) vs Roadmap (strategic). Minimal change — only what changed. Keep the note in pipe format. Set cluster markers where appropriate. For bug log / spec / plan: create + link. Short mention in the response: `📋 Kanban: #70 → Testing`.
 
 **Do not update**: purely informational task (question, explanation) or item already at the right status.
 
-## bd Sync (when `.beads/issues.jsonl` exists)
+## bd reference (Mode A only)
 
-The Actions table above lists every bd call by trigger. Below: only the details that don't fit a one-line table cell.
-
-**Full `bd create` template** (needed for `--priority`, multiple `--label`, optional cluster):
-
-```bash
-bd create \
-  --title "<full title including [cluster] marker>" \
-  --description "<note or '(no notes)'>" \
-  --type bug|task|feature \
-  --priority 4 \
-  --label kanban-<N> \
-  --label inbox \
-  --label cluster-<marker>   # only if a cluster applies
-```
-
-After create: write the returned `<bd-id>` (e.g. `PROJ-abc`) into BOTH `.beads/kanban-bd-mapping.json` (as `"N": "PROJ-abc"`) AND the KANBAN.md `bd` column.
-
-**Ready check** (not in the Actions table — agent-driven, not status-driven): `bd ready` lists all unblocked Backlog items.
-
-**Sandbox**: bd calls need `dangerouslyDisableSandbox: true` because bd writes to the local Dolt DB. The `beads.role not configured` warning is harmless.
+- **Ready work**: `bd ready` — unblocked open items
+- **`bd create` template**:
+  ```bash
+  bd create --title "<title>" --description "<note>" \
+    --type bug|task|feature --priority 0..4 \
+    --label kanban-<N> --label inbox [--label cluster-<marker>]
+  ```
+- **Sandbox**: bd writes need `dangerouslyDisableSandbox: true` (local Dolt DB). The `beads.role not configured` warning is harmless.
