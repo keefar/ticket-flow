@@ -168,7 +168,11 @@ for block in "${BLOCKS[@]}"; do
   [[ -n "$DESCRIPTION" ]] && CMD+=(--description="$DESCRIPTION")
 
   if OUT="$("${CMD[@]}" 2>&1)"; then
-    NEW_ID="$(printf '%s' "$OUT" | grep -oE 'ticket-flow-[a-z0-9]+' | head -1)"
+    # Parse the project-prefixed bd-id from `bd create` output. The prefix is
+    # the project name (varies per-repo: e.g. `ticket-flow`, `myapp`, `tmp_xyz`
+    # for ephemeral test workspaces). Format is `Created issue: <prefix>-<suffix>`
+    # where suffix is the random short slug.
+    NEW_ID="$(printf '%s' "$OUT" | sed -n 's/.*Created issue: \([A-Za-z0-9_-]\{1,\}-[a-z0-9]\{1,\}\).*/\1/p' | head -1)"
     if [[ -n "$NEW_ID" ]]; then
       CREATED_IDS+=("kanban-$ASSIGNED_KANBAN_N = $NEW_ID  ($TITLE)")
       PULLED_BLOCKS+=("$block")
