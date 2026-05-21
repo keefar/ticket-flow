@@ -357,7 +357,7 @@ For each ticket whose subagent succeeded, **one at a time** — never two at onc
 
 1. `cd <main-repo>` — commit `.beads/` if dirty (the dirty-`.beads`-blocks-merge gotcha).
 2. `git merge <worktree-agent-branch>` — on a conflict: stop this ticket, leave it for the user, continue with the rest.
-3. Finish the ticket: run `skills/finish/SKILL.md` steps 6–7 — gating (residual → Testing, none → Done) from the subagent's classification, the KANBAN/bd update, `kanban-render.sh`, and worktree cleanup (`git worktree remove`).
+3. Finish the ticket: run `skills/finish/SKILL.md` steps 6–7 — gating (residual → Testing, none → Done) from the subagent's classification, the KANBAN/bd update, `kanban-render.sh`, and worktree cleanup: **`git worktree unlock <path>` then `git worktree remove <path>`** — `Agent`-tool worktrees are created *locked* (lock owner = the Claude session), so a plain `git worktree remove` fails until unlocked. Then `git branch -D <worktree-agent-branch>`.
 4. On a reported hard blocker: file the escalation bead now, controller-side, per `skills/implement/SKILL.md` § Escalation on a hard blocker.
 
 ### P7. Final report
