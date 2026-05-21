@@ -79,7 +79,7 @@ Spec ACs met: <met>/<total> (if a spec exists)
 Typecheck/test: <status>
 ```
 
-On implementation failure: stop, report the error, **do not execute step 7** (no auto-finish; set status=error if KANBAN_ID is set — see below).
+On implementation failure: stop, report the error, **do not execute step 7** (no auto-finish; set status=error if KANBAN_ID is set — see below). If the failure is a *hard blocker* — external auth, a missing dependency, or a verification that keeps failing after a genuine attempt — also file a structured escalation issue before reporting (see **§ Escalation on a hard blocker**).
 
 ### 7. Spawn-mode auto-handoff (only when `KANBAN_ID` env var is set)
 
@@ -115,7 +115,51 @@ If the item type = "research" (AC mentions "research doc" or similar):
 4. Synthesis: combine all results into ONE doc (e.g. `docs/research/<topic>.md`)
 5. Never trust subagent output blindly — review critically, verify sources
 
+**Model tier per subagent (ticket-flow-sqh)** — the `Agent` tool takes a `model` parameter; pick it by the dispatched task's complexity instead of always inheriting the session model:
+
+| Dispatched task | Model |
+|---|---|
+| Mechanical / convention-bound — one well-scoped lookup, a doc fetch, a rote edit | `haiku` |
+| Standard — a research strand, a contained implementation slice | `sonnet` (or inherit) |
+| Cross-file reasoning, architecture, ambiguous scope | `opus` |
+
+When in doubt, go one tier up. This is a cost lever — it never changes *what* gets done, only which model does it. The same table applies to the planned `flow --parallel` dispatch (`ticket-flow-x71`).
+
 **Forbidden**: for tasks that need external GUI tools (e.g. hardware-related GUI tools, manual tooling work) → NO subagent dispatch. Use interactive single-session guidance instead.
+
+## Escalation on a hard blocker (ticket-flow-8f2)
+
+A *hard blocker* is a failure this phase genuinely cannot work past on its own — an external auth failure, a missing dependency, or a verification that keeps failing after a real attempt. When you hit one: do **not** stop with only a raw error, and do **not** start a silent retry-loop. File a structured escalation issue so the blocker is tracked, **then** report it to the user with the issue id.
+
+This is escalation, not auto-fix — the user always sees the failure. The point is a durable, structured artifact instead of a lost error message.
+
+**Escalation body** — four sections, always:
+
+- **Task** — what the phase was trying to do.
+- **What was tried** — each attempt and how it failed.
+- **Root-cause hypothesis** — the best read of what is actually blocking.
+- **Suggested next step** — one concrete, actionable suggestion for the human.
+
+**Mode A** (`.beads/` present) — file a bead (`dangerouslyDisableSandbox: true` for the `bd` call):
+
+```bash
+bd create --type=bug --priority=1 --title="blocked: <short task title>" \
+  --description="## Task
+<…>
+
+## What was tried
+<…>
+
+## Root-cause hypothesis
+<…>
+
+## Suggested next step
+<…>"
+```
+
+**Mode B** (no `.beads/`) — add the same four-section block as a new bug item in the KANBAN.md Inbox intake zone (or `gh issue create` if the project tracks blockers on GitHub).
+
+Then report to the user: the raw error **and** the escalation issue id.
 
 ## What it doesn't do
 

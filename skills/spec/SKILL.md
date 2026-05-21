@@ -148,6 +148,18 @@ echo "✓ /ticket-flow:spec for #$ID dispatched to Ghostty tab (UUID: $TAB_UUID)
 
 `/ticket-flow:spec <id> --auto` produces a **complete** spec in one shot — it asks the user **no questions**. It runs the same steps 1–7 and 9, but step 8 is replaced and steps 10–11 differ.
 
+**Step 7.5 (codebase grounding — optional, `ticket-flow-n3j`)** — for a *non-trivial* feature (anything beyond a doc fix, a config tweak, or a one-line change), dispatch **one** `feature-dev:code-explorer` agent before filling the body, so Context and Acceptance Criteria are grounded in the actual code rather than guessed:
+
+```
+Agent(subagent_type: "feature-dev:code-explorer",
+      description: "Explore code for spec #<id>",
+      prompt: "Trace the implementation relevant to: <feature title + Kanban note>.
+               Return entry points with file:line, the execution flow, key
+               components, and the files essential to understand this area.")
+```
+
+Read the files the explorer flags as essential, then fill the body from that understanding. **Skip this for trivial items** — it is a cost, not a ritual. `feature-dev` must be installed; if the agent type is unavailable, fall back to `docs/PROJECT-CONVENTIONS.md` + a direct read of the obvious files. See [`docs/research/feature-dev-vs-superpowers.md`](../../docs/research/feature-dev-vs-superpowers.md).
+
 **Step 8 (replaced)** — fill the whole body from the Kanban item + available context (codebase, linked specs, prior items):
 
 - **Context** — why the item exists, who's affected, where the demand comes from (2–3 sentences).
@@ -162,7 +174,11 @@ echo "✓ /ticket-flow:spec for #$ID dispatched to Ghostty tab (UUID: $TAB_UUID)
 
 Do **not** invent answers to genuine design decisions. Where a real choice exists — architecture, data/display format, a behavior with no single obvious right answer — surface it in a `## Decisions` section instead of guessing or asking.
 
-**The `## Decisions` section** — inserted right after `## Context`, before `## Acceptance Criteria`. Omit it entirely when the item has no genuine design ambiguity (`--auto` still produces a valid, complete spec). Format (proven by hand in `docs/specs/8-beads-first-architecture.md`):
+**The `## Decisions` section** — inserted right after `## Context`, before `## Acceptance Criteria`. Omit it entirely when the item has no genuine design ambiguity (`--auto` still produces a valid, complete spec).
+
+**Grounding the options (optional, `ticket-flow-5yb`)** — when a decision is genuinely *architectural* (not a display-format or naming choice), dispatch 2–3 `feature-dev:code-architect` agents in parallel, each with a different brief (minimal change / clean architecture / pragmatic balance). Each returns a codebase-grounded blueprint; turn them into the `### D#` options below. For non-architectural decisions, write the options directly — no dispatch.
+
+Format (proven by hand in `docs/specs/8-beads-first-architecture.md`):
 
 ```
 ## Decisions
@@ -221,7 +237,7 @@ The decisions can also be locked at flow-time instead of here — `/ticket-flow:
 
 ## Constraints
 
-- NO subagent dispatches inside this skill — all steps run directly via Bash / Read / Edit / Write.
+- Subagent dispatches are limited to the two scoped, optional **`--auto`-mode** exceptions below (`code-explorer` / `code-architect` — `ticket-flow-n3j` / `ticket-flow-5yb`). Every other step, and the whole of interactive mode, runs directly via Bash / Read / Edit / Write — no dispatch.
 - Interactive mode: NO content changes to the spec template body (only frontmatter + title heading get filled — the author fills the body afterwards). **`--auto` mode fills the body** (Context / ACs / Out of Scope / References / Notes + an optional `## Decisions` section) — see the **Autonomous mode (`--auto`)** section.
 - NO changes to other KANBAN.md items.
 - NO automatic column moves (Inbox stays Inbox until the user explicitly moves it).

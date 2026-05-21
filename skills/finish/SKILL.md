@@ -204,10 +204,44 @@ NO auto rollback. The worktree stays for manual inspection. **NO tab close** —
 ## Edge cases
 
 - **Typecheck/test red**: abort the merge, inform the user, back to /ticket-flow:implement
-- **Deploy fails**: report the skill output, do not merge, the user decides whether to debug further or roll back
+- **Deploy fails**: report the skill output, do not merge, the user decides whether to debug further or roll back. If the failure is an external hard blocker (not a code bug), file an escalation issue — see **§ Escalation on a hard blocker**.
 - **Merge conflict**: do NOT bypass with `--no-verify`. Resolve the conflict cleanly or hand back to the user
 - **Item not In Progress**: error — "Item is not In Progress. Run /ticket-flow:pickup or /ticket-flow:implement first."
 - **Branch not ahead of main**: warning — "Branch has no new commits. Really finish?"
+
+## Escalation on a hard blocker (ticket-flow-8f2)
+
+A *hard blocker* is a failure this phase genuinely cannot work past on its own — an external auth failure, a missing dependency, or a verification that keeps failing after a real attempt. When you hit one: do **not** stop with only a raw error, and do **not** start a silent retry-loop. File a structured escalation issue so the blocker is tracked, **then** report it to the user with the issue id.
+
+This is escalation, not auto-fix — the user always sees the failure. The point is a durable, structured artifact instead of a lost error message.
+
+**Escalation body** — four sections, always:
+
+- **Task** — what the phase was trying to do.
+- **What was tried** — each attempt and how it failed.
+- **Root-cause hypothesis** — the best read of what is actually blocking.
+- **Suggested next step** — one concrete, actionable suggestion for the human.
+
+**Mode A** (`.beads/` present) — file a bead (`dangerouslyDisableSandbox: true` for the `bd` call):
+
+```bash
+bd create --type=bug --priority=1 --title="blocked: <short task title>" \
+  --description="## Task
+<…>
+
+## What was tried
+<…>
+
+## Root-cause hypothesis
+<…>
+
+## Suggested next step
+<…>"
+```
+
+**Mode B** (no `.beads/`) — add the same four-section block as a new bug item in the KANBAN.md Inbox intake zone (or `gh issue create` if the project tracks blockers on GitHub).
+
+Then report to the user: the raw error **and** the escalation issue id. A typecheck/test failure that is a normal code bug is **not** a hard blocker — that goes back to `/ticket-flow:implement` as before.
 
 ## What it doesn't do
 
