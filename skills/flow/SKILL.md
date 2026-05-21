@@ -91,61 +91,27 @@ Skip silently in --local (the new default) — no spawn anyway.
 - `--spawn` flag (optional, position-independent) — opt-in for Ghostty-tab spawn mode (currently broken on Ghostty 1.3.1, falls back to --local with warning)
 
 ```bash
-ID=""
-SUFFIX=""
-LOCAL=1            # default: --local (changed 2026-05-18, see ticket-flow-k9h)
-USE_SPAWN=0
-PARALLEL=0         # --parallel: work multiple tickets via worktree-isolated subagents
-DECISIONS=""        # comma-separated option numbers, positional → D1,D2,…
-USE_RECS=0
-POSITIONAL=()
-prev=""
-for arg in "$@"; do
-  case "$arg" in
-    --local)               LOCAL=1; USE_SPAWN=0 ;;
-    --spawn)               USE_SPAWN=1; LOCAL=0 ;;
-    --parallel)            PARALLEL=1 ;;
-    --use-recommendations) USE_RECS=1 ;;
-    --decisions)           ;;                       # value is the next arg
-    --decisions=*)         DECISIONS="${arg#*=}" ;;
-    *)
-      if [[ "$prev" == "--decisions" ]]; then DECISIONS="$arg"
-      else                                    POSITIONAL+=("$arg")
-      fi ;;
-  esac
-  prev="$arg"
-done
-if (( PARALLEL )); then
-  # POSITIONAL = explicit ticket ids; empty → whole ready queue (see ## Parallel mode)
-  PARALLEL_IDS=()
-  (( ${#POSITIONAL[@]} > 0 )) && PARALLEL_IDS=("${POSITIONAL[@]}")
-  if [[ -n "$DECISIONS" ]]; then
-    echo "❌ --decisions is not supported with --parallel — resolve each ticket's decisions first" >&2
-    exit 1
-  fi
-else
-  ID="${POSITIONAL[0]:-}"
-  SUFFIX="${POSITIONAL[1]:-}"
-fi
-# --decisions and --use-recommendations are mutually exclusive
-if [[ -n "$DECISIONS" && "$USE_RECS" -eq 1 ]]; then
-  echo "❌ --decisions and --use-recommendations are mutually exclusive" >&2
-  exit 1
-fi
+# Parse the run-mode args via the pure helper (`cleanup` is handled in step 0
+# and never reaches here). parse-flow-args.sh is unit-tested by
+# tests/test_flow-parallel.sh; it sets MODE (local|spawn|parallel), ID, SUFFIX,
+# PARALLEL_IDS (array — empty in parallel mode = whole ready queue), USE_SPAWN,
+# LOCAL, USE_RECS, DECISIONS — or exits non-zero with an `ERROR:` on stderr.
+PARSED="$("${CLAUDE_PLUGIN_ROOT}/skills/flow/parse-flow-args.sh" "$@")" || exit 1
+eval "$PARSED"
+
 # --spawn auto-fallback on known-broken Ghostty versions
-if (( USE_SPAWN )); then
+if [[ "$MODE" == "spawn" ]]; then
   GHOSTTY_VER="$(defaults read /Applications/Ghostty.app/Contents/Info.plist CFBundleShortVersionString 2>/dev/null || echo unknown)"
   if [[ "$GHOSTTY_VER" == "1.3.1" ]]; then
     echo "⚠ Ghostty 1.3.1 has an AppleScript regression (ticket-flow-k9h) — falling back to --local" >&2
-    USE_SPAWN=0
-    LOCAL=1
+    MODE="local"; USE_SPAWN=0; LOCAL=1
   fi
 fi
 ```
 
 ### 1.7. Route: parallel mode
 
-**If `PARALLEL=1`** → steps 1.5–7 below do not apply (they are the single-ticket path). Jump to **## Parallel mode (`--parallel`)** at the end of this skill. Step 0 (`cleanup`) is still handled above as normal.
+**If `MODE` is `parallel`** → steps 1.5–7 below do not apply (they are the single-ticket path). Jump to **## Parallel mode (`--parallel`)** at the end of this skill. Step 0 (`cleanup`) is still handled above as normal.
 
 ### 1.5. Pre-spawn cleanup (--spawn mode only)
 

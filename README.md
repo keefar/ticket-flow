@@ -89,9 +89,10 @@ $EDITOR ~/.claude/local-plugins/ticket-flow/skills/flow/SKILL.md
 # Run tests
 cd ~/.claude/local-plugins/ticket-flow/skills/flow
 bash tests/test_flow-wrap.sh
-bash tests/test_spawn-ghostty.sh
 bash tests/test_flow-cleanup.sh
 bash tests/test_format-tab-title.sh
+bash tests/test_ghostty-osascript.sh
+bash tests/test_flow-parallel.sh
 ```
 
 Helper scripts resolve via `$(dirname "$0")` — works both in `~/.claude/local-plugins/ticket-flow/skills/flow/` and in older `.claude/skills/flow/` layouts (backward-compatible).
