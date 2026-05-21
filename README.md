@@ -7,7 +7,7 @@ Kanban + git-worktree based ticket workflow for Claude Code. A spec → pickup �
 - `/ticket-flow:pickup <id>` — phase 1: validate DoR, create worktree, set branch lock, move item to In Progress
 - `/ticket-flow:implement` — phase 2: execute the plan inside the worktree (interactive or via subagent dispatch)
 - `/ticket-flow:finish` — phase 3: verification, optional deploy, merge to main, item → Testing
-- `/ticket-flow:flow <id>` — orchestrator: runs `--local` (default — all phases in this session with user checkpoints); `--spawn` opt-in spawns the pipeline in a new Ghostty tab
+- `/ticket-flow:flow <id>` — orchestrator: `--local` (default — all phases in this session with user checkpoints), `--parallel` (work multiple ready tickets at once via worktree-isolated subagents), `--spawn` (opt-in — spawn the pipeline in a new Ghostty tab)
 - `/ticket-flow:kanban` — maintain Inbox · Backlog · In Progress · Testing
 
 Setup & maintenance: `/ticket-flow:discover`, `/ticket-flow:bd-init`, `/ticket-flow:bd-detox`, `/ticket-flow:status`, `/ticket-flow:publish`, `/ticket-flow:push`.

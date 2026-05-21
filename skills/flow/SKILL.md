@@ -1,12 +1,12 @@
 ---
 name: flow
-description: Orchestrator for Ticket-Flow — default is `--local` (all phases in this session with user checkpoints). Pass `--spawn` to spawn /ticket-flow:implement → auto /ticket-flow:finish in a new Ghostty tab (currently broken on Ghostty 1.3.1, see ticket-flow-k9h — use --local until fixed). Invoke as `/ticket-flow:flow <kanban-id>` or `/ticket-flow:flow cleanup` to sweep finished spawns.
+description: Orchestrator for Ticket-Flow — default is `--local` (all phases in this session with user checkpoints). `--parallel` works multiple ready tickets at once via worktree-isolated subagents in this session. `--spawn` spawns implement→finish into a new Ghostty tab (broken on Ghostty 1.3.1, see ticket-flow-k9h). Invoke as `/ticket-flow:flow <kanban-id>`, `/ticket-flow:flow --parallel [<id>…]`, or `/ticket-flow:flow cleanup`.
 ---
 
 # /flow — Ticket-Flow orchestrator
 
 **Args**:
-- Run mode: `<kanban-id>` (required) · `<branch-suffix>` (optional, forwarded to /pickup) · `--spawn` (optional, opt-in for Ghostty spawn mode; **currently broken on Ghostty 1.3.1 — see ticket-flow-k9h**) · `--local` (optional, **now the default** — kept as explicit flag for symmetry) · `--decisions a,b,c` / `--use-recommendations` (optional, mutually exclusive — resolve the spec's `## Decisions` section; apply in both modes; see step 1.6).
+- Run mode: `<kanban-id>` (required — *except* with `--parallel`) · `<branch-suffix>` (optional, forwarded to /pickup) · `--parallel` (optional — work multiple tickets at once via worktree-isolated subagents; with no id = the whole ready queue, see **## Parallel mode**) · `--spawn` (optional, opt-in for Ghostty spawn mode; **currently broken on Ghostty 1.3.1 — see ticket-flow-k9h**) · `--local` (optional, **the default** — kept as explicit flag for symmetry) · `--decisions a,b,c` / `--use-recommendations` (optional, mutually exclusive — resolve the spec's `## Decisions` section; see step 1.6; `--decisions` is rejected with `--parallel`).
 - Cleanup mode: first arg `cleanup`, optional `<kanban-id>` for selective sweep, optional `--stale` to also remove stale-running entries (tab gone, status never reached done/error), optional `--dry-run` for report-only.
 
 ## Default change — 2026-05-18
@@ -16,6 +16,8 @@ Until 2026-05-18, the default mode was **spawn**. After a live test surfaced a G
 ## What it does
 
 **Default (`/ticket-flow:flow <id>`)** — *now equivalent to --local*: all three phases run sequentially in this session with user checkpoints between phases.
+
+**Parallel (`/ticket-flow:flow --parallel [<id>…]`)** — opt-in: works **multiple independent tickets at once**. This session is the controller; it dispatches one worktree-isolated subagent per ticket (`Agent` tool, `isolation: worktree`), collects the results, and merges them strictly sequentially. No id → the whole ready queue. See **## Parallel mode** below. This is the native replacement for `--spawn` (`ticket-flow-x71`); `--spawn` stays as a fallback until `--parallel` is proven.
 
 **Spawn (`/ticket-flow:flow <id> --spawn`)** — opt-in: pickup runs here (seconds). Then a new Ghostty tab spawns inside the worktree with its own Claude instance, which runs `Skill(ticket-flow:implement)` and on success automatically triggers `Skill(ticket-flow:finish)`. **Broken on Ghostty 1.3.1** — falls back to --local with a warning.
 
@@ -93,24 +95,38 @@ ID=""
 SUFFIX=""
 LOCAL=1            # default: --local (changed 2026-05-18, see ticket-flow-k9h)
 USE_SPAWN=0
+PARALLEL=0         # --parallel: work multiple tickets via worktree-isolated subagents
 DECISIONS=""        # comma-separated option numbers, positional → D1,D2,…
 USE_RECS=0
+POSITIONAL=()
 prev=""
 for arg in "$@"; do
   case "$arg" in
     --local)               LOCAL=1; USE_SPAWN=0 ;;
     --spawn)               USE_SPAWN=1; LOCAL=0 ;;
+    --parallel)            PARALLEL=1 ;;
     --use-recommendations) USE_RECS=1 ;;
     --decisions)           ;;                       # value is the next arg
     --decisions=*)         DECISIONS="${arg#*=}" ;;
     *)
-      if   [[ "$prev" == "--decisions" ]]; then DECISIONS="$arg"
-      elif [[ -z "$ID" ]];                 then ID="$arg"
-      else                                      SUFFIX="$arg"
+      if [[ "$prev" == "--decisions" ]]; then DECISIONS="$arg"
+      else                                    POSITIONAL+=("$arg")
       fi ;;
   esac
   prev="$arg"
 done
+if (( PARALLEL )); then
+  # POSITIONAL = explicit ticket ids; empty → whole ready queue (see ## Parallel mode)
+  PARALLEL_IDS=()
+  (( ${#POSITIONAL[@]} > 0 )) && PARALLEL_IDS=("${POSITIONAL[@]}")
+  if [[ -n "$DECISIONS" ]]; then
+    echo "❌ --decisions is not supported with --parallel — resolve each ticket's decisions first" >&2
+    exit 1
+  fi
+else
+  ID="${POSITIONAL[0]:-}"
+  SUFFIX="${POSITIONAL[1]:-}"
+fi
 # --decisions and --use-recommendations are mutually exclusive
 if [[ -n "$DECISIONS" && "$USE_RECS" -eq 1 ]]; then
   echo "❌ --decisions and --use-recommendations are mutually exclusive" >&2
@@ -126,6 +142,10 @@ if (( USE_SPAWN )); then
   fi
 fi
 ```
+
+### 1.7. Route: parallel mode
+
+**If `PARALLEL=1`** → steps 1.5–7 below do not apply (they are the single-ticket path). Jump to **## Parallel mode (`--parallel`)** at the end of this skill. Step 0 (`cleanup`) is still handled above as normal.
 
 ### 1.5. Pre-spawn cleanup (--spawn mode only)
 
@@ -302,6 +322,81 @@ Manual verification pending.
 ```
 
 In **Mode B** the original KANBAN.md → Testing wording is correct verbatim.
+
+## Parallel mode (`--parallel`)
+
+`--parallel` works **multiple independent tickets at once** — one worktree-isolated subagent per ticket, dispatched from this (the controller) session. Opt-in; the default and `--spawn` are unaffected.
+
+This is the native replacement for the Ghostty `--spawn` mode (`ticket-flow-x71`). **Staged rollout:** Stage 1 ships `--parallel`; the `--spawn` machinery stays in place as a fallback until `--parallel` is proven on real tickets, then it gets retired (Stage 2).
+
+**Why a controller + subagents, not N spawned sessions:** the `Agent` tool's `isolation: "worktree"` gives each subagent a real, locked git worktree (`.claude/worktrees/agent-<hash>`, branch `worktree-agent-<hash>`, forked from `main`'s current tip, sharing the object store). One controller session coordinates — far cheaper than N full Ghostty sessions, and the controller serializes the merges so they never race.
+
+### P1. Resolve the ticket set
+
+- **No id** → the whole ready queue: `bd ready` (Mode A) or the Backlog section of KANBAN.md (Mode B). Keep only DoR-met items (same DoR as `/ticket-flow:pickup` step 2).
+- **Explicit ids** → validate each is in Backlog + DoR-met; a bad id aborts the whole batch with a clear error.
+- **Empty set** → report "nothing ready" and stop.
+
+### P2. Decision gate — all tickets, up front
+
+Run the step 1.6 decision gate for **every** ticket in the set. If **any** ticket has an unresolved `## Decisions` section (no covering `## Decision Log`), **STOP the whole batch** — never dispatch a partial set. Report which tickets need decisions and how to resolve them (the `/ticket-flow:spec` review step, or `--use-recommendations`). `--decisions` is rejected with `--parallel` (positional picks can't map across multiple tickets).
+
+### P3. Mark all tickets In Progress (controller, sequential)
+
+Before dispatch, the **controller** moves every ticket Backlog → In Progress — sequentially, in the main repo. **Only the controller ever writes `.beads/` / KANBAN.md.** Subagents never touch bd state — that keeps `.beads/issues.jsonl` from diverging across worktrees and merge-conflicting.
+
+```bash
+source "${CLAUDE_PLUGIN_ROOT}/skills/kanban/bd-helper.sh"
+# per ticket:
+BD_ID="$(bd_id_for "$ID")"; bd_set_status "$BD_ID" in_progress
+"${CLAUDE_PLUGIN_ROOT}/skills/kanban/kanban-render.sh"
+```
+
+The `branch:` lock marker is **not** set here — each subagent's branch (`worktree-agent-<hash>`) only exists once its worktree is created. In `--parallel` the controller tracks the branch↔ticket mapping in-session instead.
+
+### P4. Dispatch one subagent per ticket
+
+Dispatch all subagents in a **single message** (multiple `Agent` calls → they run concurrently), each with `subagent_type: "general-purpose"`, `isolation: "worktree"`, and `model:` chosen by ticket complexity (the model-tier table in `skills/implement/SKILL.md`, `ticket-flow-sqh`).
+
+Each prompt is **self-contained** — the controller supplies everything, because the subagent's branch is not a tf `branch:` marker and KANBAN branch-derivation will not find the item:
+
+```
+Ticket #<id>: <title>
+Spec: <path or none>   Plan: <path or none>
+Acceptance Criteria: <inline list or "see spec">
+
+You are in an isolated git worktree. Implement this ticket end-to-end:
+- Follow skills/implement/SKILL.md steps 3–6 (pick mode by plan complexity,
+  incremental commits, typecheck/test after each major step). Skip steps 1–2
+  (branch-derivation) — the context above replaces it.
+- Then run skills/finish/SKILL.md steps 2–4 (typecheck, tests, testable-
+  surface gate, optional review/deploy) and classify every AC as *proven*
+  or *residual*.
+- Do NOT merge, do NOT push, do NOT touch .beads/ or KANBAN.md, do NOT run
+  the finish merge/cleanup steps.
+- On a hard blocker: report it back instead of filing the escalation bead
+  yourself (the controller files it).
+
+Report: your branch (`git branch --show-current`), commit count, ACs met
+(proven/total), the residual checklist (if any), any blocker.
+```
+
+### P5. Consolidated checkpoint
+
+When all subagents return, present **one** checkpoint — per ticket: branch, commits, ACs proven/residual, blockers. `--parallel` has **no per-ticket checkpoints** — that is the trade for throughput; use the default `--local` when you want them. Ask once: merge all / merge a subset / stop.
+
+### P6. Merge — controller, strictly sequential
+
+For each ticket whose subagent succeeded, **one at a time** — never two at once (`main` and `.beads/issues.jsonl` are shared state):
+
+1. `cd <main-repo>` — commit `.beads/` if dirty (the dirty-`.beads`-blocks-merge gotcha).
+2. `git merge <worktree-agent-branch>` — on a conflict: stop this ticket, leave it for the user, continue with the rest.
+3. Finish the ticket: run `skills/finish/SKILL.md` steps 6–7 — gating (residual → Testing, none → Done) from the subagent's classification, the KANBAN/bd update, `kanban-render.sh`, and worktree cleanup (`git worktree remove`).
+4. On a reported hard blocker: file the escalation bead now, controller-side, per `skills/implement/SKILL.md` § Escalation on a hard blocker.
+
+### P7. Final report
+
+One consolidated report — per ticket: Done / Testing (+ residual pointer) / merge-conflict / blocked. Network ops stay out: `--parallel` leaves commits local like the other modes; the user runs `/ticket-flow:push` from this session afterwards.
 
 ## What it doesn't do
 
