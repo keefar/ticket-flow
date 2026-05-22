@@ -5,7 +5,7 @@ description: Phase 2 of Ticket-Flow — execute the plan for the current In-Prog
 
 # /ticket-flow:implement — Phase 2 of Ticket-Flow
 
-**Args**: none — operates in the current worktree, derives the item via the `branch:` marker in the main repo's KANBAN.md.
+**Args**: none — operates in the current worktree, derives the item via the `branch:` marker — in the bd notes field (Mode A) or the main repo's KANBAN.md (Mode B).
 
 ## Prerequisites
 
