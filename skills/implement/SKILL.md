@@ -22,7 +22,17 @@ git branch --show-current
 
 → branch name (e.g. `worktree-94-multipoint-messung` from EnterWorktree, or `feature/94-multipoint-messung` from manual `git worktree`).
 
-Search KANBAN.md (in the **main repo**, not the worktree!) for `branch: <branch>` in the In Progress section.
+Resolve the item by the `.ticket-flow` mode flag (source `skills/kanban/bd-helper.sh`):
+
+- **Mode A** (`mode=beads`) — find the bd issue whose notes field carries `branch: <branch>`. **Do not read `KANBAN.md`.**
+  ```bash
+  source "${CLAUDE_PLUGIN_ROOT}/skills/kanban/bd-helper.sh"
+  BRANCH="$(git branch --show-current)"
+  BD_ID="$(bd list --json 2>/dev/null | jq -r --arg b "$BRANCH" \
+    '.[] | select((.notes // "") | test("(^|\\n)branch: " + $b + "$")) | .id' | head -1)"
+  ID="$(bd_kanban_for "$BD_ID")"
+  ```
+- **Mode B** (`mode=kanban`) — search KANBAN.md (in the **main repo**, not the worktree!) for `branch: <branch>` in the In Progress section.
 
 **IMPORTANT in an EnterWorktree session**: all git commits must run as `cd /path/to/main-repo && git ...` in a **single shell statement**. `git -C <path>` alone is NOT enough — the harness session isolation blocks `.git/index.lock` writes outside the worktree path when the process isn't physically there. Commit pattern:
 
