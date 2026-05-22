@@ -13,6 +13,18 @@ description: Orchestrator for Ticket-Flow — default is `--local` (all phases i
 
 Until 2026-05-18, the default mode was **spawn**. After a live test surfaced a Ghostty 1.3.1 AppleScript regression (`ticket-flow-k9h`) that breaks `input text` on AS-created tabs, the default flipped to **--local**. The spawn path is preserved (`--spawn` opt-in) so it can be re-tested when Ghostty fixes the regression.
 
+## Decide, don't prompt — clear-cut points get a default (all modes)
+
+**At any decision point that is unambiguous or indifferent, decide with a sensible default and proceed — never stop with an `AskUserQuestion` menu for it.** Stop only for *genuine* ambiguity: a choice where a wrong pick has real, non-obvious consequences and no default is clearly right. This is unconditional default behavior across **every** mode (`--local`, `--parallel`, `--spawn`) — not a flag, not a mode.
+
+Three things still stop on purpose — they are neither clear-cut nor indifferent:
+
+- **`--local`'s per-phase checkpoints** — the "Ready for /implement? / finish?" review gates in steps 4/5/6. These *are* the value of `--local`; they stay. A checkpoint-free local run, if ever wanted, is a separate future flag.
+- **`--parallel`'s P5 consolidated checkpoint** — merge all / subset / stop.
+- **The step-1.6 decision gate** — a spec's genuine `## Decisions` section is ambiguous by construction; resolved by the user or by `--use-recommendations`, never auto-decided here.
+
+Everything else — reference-fork with nothing to fork, sub-item strategy when there are no sub-items, "inline plan or structured plan" for a trivial bug, "which implement mode" when the plan/item makes it obvious — auto-decides. The phase skills (`pickup`, `implement`) follow the same rule; see their step notes.
+
 ## What it does
 
 **Default (`/ticket-flow:flow <id>`)** — *now equivalent to --local*: all three phases run sequentially in this session with user checkpoints between phases.
