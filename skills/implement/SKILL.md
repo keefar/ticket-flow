@@ -50,7 +50,7 @@ COMMIT
 ### 2. Load the plan
 
 - Plan link in the note? → read the plan
-- No plan? → ask the user whether to continue /ticket-flow:implement without a structured plan (fine for trivial bugs)
+- No plan? → **decide, don't prompt** (see *Decide, don't prompt* in `skills/flow/SKILL.md`). For a trivial bug — `bug` tag, single-file, scope obvious from the title/spec — proceeding without a structured plan is clear-cut: continue silently. Only stop and ask when there is no plan **and** the scope is genuinely unclear (a `feature`/`change` with no spec, ambiguous blast radius).
 - Spec link in the note? → read the spec in parallel for Acceptance Criteria
 
 ### 3. Choose the implementation mode
@@ -64,7 +64,7 @@ Assess plan complexity:
 | Multiple independent strands (e.g. parallel research) | Subagent dispatch | `Skill(superpowers:subagent-driven-development)` or `dispatching-parallel-agents` |
 | Research item (output is a doc, not code) | Subagent dispatch for parallel sources, synthesized by you | `dispatching-parallel-agents` |
 
-When in doubt: ask the user which mode.
+**Decide, don't prompt** (see *Decide, don't prompt* in `skills/flow/SKILL.md`): the plan/item almost always picks the row for you — a clean sequential plan → plan execution, a single-file bug → interactive, a research item → subagent dispatch. Infer the mode and proceed. Only when the plan genuinely fits two rows with materially different outcomes — and no default is clearly right — stop and ask which mode.
 
 ### 4. Run the implementation
 

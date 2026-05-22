@@ -57,22 +57,26 @@ grep -nE "^\| ${id} \|" KANBAN.md
 
 ### 2.5. Read spec frontmatter (when a spec exists)
 
-Parse the spec's YAML frontmatter (`docs/specs/<id>-<slug>.md`) and capture three optional fields:
+Parse the spec's YAML frontmatter (`docs/specs/<id>-<slug>.md`) and capture three optional fields. **Prompt only when there is a genuine choice** — see *Decide, don't prompt* in `skills/flow/SKILL.md`: a menu with one obvious answer (or no answer to make) auto-decides silently.
 
-- **`reference-fork:` (Cherry #7)** — URL or `none`. If a URL is set, ask the user:
-  ```
-  Reference fork specified: <url>
-  Initialize the worktree with this OSS project as the starting commit?
-  [Y]es — git clone <url> into the worktree dir, then `git checkout -b <branch>`
-  [N]o  — proceed with normal worktree creation (default if `--auto` or no answer)
-  ```
-  Skip the prompt in non-interactive contexts (subagent spawn, `--auto`-style flags downstream); default `N`.
-- **`subitems:` (Cherry #6)** — `true` or `false`. If `true`, the spec lists sub-items in a `## Sub-Items` section as `<id>.<n>` (e.g. `94.1`, `94.2`). Ask:
-  ```
-  Item #<id> has <N> sub-items.
-  [1] Pick all sequentially with auto-chain after /finish (default)
-  [2] Pick .1 only — manual /pickup for the rest
-  ```
+- **`reference-fork:` (Cherry #7)** — URL or `none`.
+  - `none`, empty, or field absent → **nothing to decide. Skip silently** — no menu.
+  - A URL **and** the run is non-interactive (subagent spawn, `--auto`-style flags downstream, `--parallel`) → auto-decide `N` (normal worktree creation), no menu.
+  - A URL **and** an interactive run → this is a real fork-vs-normal choice; ask:
+    ```
+    Reference fork specified: <url>
+    Initialize the worktree with this OSS project as the starting commit?
+    [Y]es — git clone <url> into the worktree dir, then `git checkout -b <branch>`
+    [N]o  — proceed with normal worktree creation (default if `--auto` or no answer)
+    ```
+- **`subitems:` (Cherry #6)** — `true` or `false`.
+  - `false`, empty, or field absent → **no sub-items, nothing to decide. Skip silently** — no menu.
+  - `true` → the spec lists sub-items in a `## Sub-Items` section as `<id>.<n>` (e.g. `94.1`, `94.2`); the all-vs-one choice is a real one. Ask:
+    ```
+    Item #<id> has <N> sub-items.
+    [1] Pick all sequentially with auto-chain after /finish (default)
+    [2] Pick .1 only — manual /pickup for the rest
+    ```
   When sub-items are picked one at a time, `/finish` writes an auto-chain pointer for the next sub-item.
 - **`testable-surface:` (Cherry #1)** — comma-separated paths or `none`. *Don't act on it here* — only `/finish` enforces. But log it in step 7's report so the implementer remembers.
 
@@ -129,12 +133,12 @@ The branch lock lives in the bd notes field; bd is the source of truth, so no KA
 
 Existing plan link in the note? → print the path, **do not create a new plan**.
 
-No plan? → report options:
+No plan? → the options are:
 - (a) inline plan in the item title is enough (for trivial bugs) — proceed to /implement
 - (b) invoke `Skill(superpowers:writing-plans)` for a structured plan
 - (c) manually create `docs/superpowers/plans/<date>-<slug>.md`
 
-When in doubt: ask the user.
+**Decide, don't prompt** (see *Decide, don't prompt* in `skills/flow/SKILL.md`): for a trivial bug — `bug` tag, single-file, an obviously sufficient inline description — option (a) is clear-cut. Pick it and proceed, no menu. Only when the scope is genuinely unclear — a `feature`/`change` with no spec, or a bug whose blast radius is not obvious — stop and ask which of (a)/(b)/(c) the user wants.
 
 ### 7. Report
 
