@@ -15,13 +15,30 @@ Examples:
 
 1. Validates that the item is in Backlog and DoR is met
 2. Creates a worktree (via `superpowers:using-git-worktrees`)
-3. Sets a `branch:` lock in the KANBAN.md note
+3. Sets a `branch:` lock (bd notes in Mode A, the KANBAN.md note in Mode B)
 4. Moves item Backlog → In Progress
 5. Looks for or scaffolds a plan doc under `docs/superpowers/plans/`
 
 ## Steps
 
-### 1. Read item from KANBAN.md
+### 1. Read the item — mode-aware
+
+The path is decided by the `.ticket-flow` mode flag (source
+`skills/kanban/bd-helper.sh`, branch on `bd_mode`).
+
+**Mode A** (`mode=beads`) — resolve the bd issue, **do not read `KANBAN.md`**:
+
+```bash
+source "${CLAUDE_PLUGIN_ROOT}/skills/kanban/bd-helper.sh"
+BD_ID="$(bd_id_for "$id")"
+```
+
+- Empty `BD_ID`: error — "Item #${id} not tracked in bd"
+- Label `inbox`: error — "Item is in Inbox, not ready. Meet DoR (write spec, resolve decision) and move to Backlog."
+- Status `in_progress`: error — "Item is already In Progress. Check the `branch:` marker in the bd notes."
+- Label `testing` or status `closed`: error — "Item is already completed."
+
+**Mode B** (`mode=kanban`) — read from KANBAN.md:
 
 ```bash
 grep -nE "^\| ${id} \|" KANBAN.md
@@ -80,11 +97,14 @@ Missing spec or frontmatter (Mode B / spec-less items): skip this step silently.
 
 **Base ref note**: EnterWorktree defaults to branching from `origin/<default-branch>` — when working on an active feature branch (e.g. `tauri-prototype`), set `worktree.baseRef = "head"` in settings.json or everything since the last main sync is lost.
 
-### 5. Update KANBAN.md (mode-aware)
+### 5. Move the item to In Progress + set the branch lock (mode-aware)
 
-Source `skills/kanban/bd-helper.sh` and branch on `bd_mode`:
+Source `skills/kanban/bd-helper.sh` and branch on `bd_mode` (the `.ticket-flow`
+mode flag):
 
-**Mode A** (`.beads/` present):
+**Mode A** (`mode=beads`) — write to bd only. **Do not touch `KANBAN.md`** —
+beads mode keeps no board in the workflow; a snapshot is available on demand
+via `/ticket-flow:board`:
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/skills/kanban/bd-helper.sh"
@@ -95,12 +115,11 @@ if [[ -n "$BD_ID" ]]; then
   # other notes (e.g. [Verify] pointers from prior /finish runs on this id).
   bd_update_notes_replace_prefix "$BD_ID" "branch:" "branch: $BRANCH"
 fi
-"${CLAUDE_PLUGIN_ROOT}/skills/kanban/kanban-render.sh"
 ```
 
-The renderer regenerates KANBAN.md from bd state — branch lock surfaces in the note via the bd notes field. No direct KANBAN.md edit.
+The branch lock lives in the bd notes field; bd is the source of truth, so no KANBAN.md edit and no render.
 
-**Mode B** (no `.beads/`):
+**Mode B** (`mode=kanban`):
 
 - **Note**: insert `branch: <branch>` as a pipe sub-field (before any other markers)
 - **Section**: remove the item from the Backlog table, insert into the In Progress table (top, or by date)

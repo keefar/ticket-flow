@@ -5,7 +5,9 @@ description: Phase 3 of Ticket-Flow — review, optional deploy, merge branch ba
 
 # /ticket-flow:finish — Phase 3 of Ticket-Flow
 
-**Args**: none — operates in the current worktree, derives the item via the `branch:` marker in the main repo's KANBAN.md.
+**Args**: none — operates in the current worktree, derives the item via the
+`branch:` marker — in the bd notes field (Mode A) or the main repo's KANBAN.md
+(Mode B).
 
 ## Prerequisites
 
@@ -15,11 +17,23 @@ description: Phase 3 of Ticket-Flow — review, optional deploy, merge branch ba
 
 ## Steps
 
-### 1. Identify the item
+### 1. Identify the item — mode-aware
 
-Same as `/ticket-flow:implement`: read the current branch, search KANBAN.md (main repo) for `branch: <branch>` in In Progress.
+Read the current branch (`git branch --show-current`), then resolve the item
+by the `.ticket-flow` mode flag (source `skills/kanban/bd-helper.sh`):
 
-- Extract ID, title, tag, spec/plan links
+- **Mode A** (`mode=beads`) — find the bd issue whose notes field carries
+  `branch: <branch>`. **Do not read `KANBAN.md`.**
+  ```bash
+  source "${CLAUDE_PLUGIN_ROOT}/skills/kanban/bd-helper.sh"
+  BRANCH="$(git branch --show-current)"
+  BD_ID="$(bd list --json 2>/dev/null | jq -r --arg b "$BRANCH" \
+    '.[] | select((.notes // "") | test("(^|\\n)branch: " + $b + "$")) | .id' | head -1)"
+  ID="$(bd_kanban_for "$BD_ID")"
+  ```
+- **Mode B** (`mode=kanban`) — search KANBAN.md (main repo) for `branch: <branch>` in the In Progress section.
+
+Extract ID, title, tag, spec/plan links from the resolved source.
 
 **Commit-cwd caveat** (same as `/ticket-flow:implement` Step 1): in an EnterWorktree session, git commits to the **main repo** must run as `cd <main-repo> && git ...` in a single statement, and commits to the **worktree branch** must run from the worktree **root** (not a subdir) — otherwise `git` fails with `.git/index.lock: Operation not permitted`. This bites in Step 5 (merge) and Step 6 (KANBAN update).
 
@@ -89,11 +103,14 @@ git branch -d <branch>
   - **Item has a spec doc** → write it as a `## Verification` section in `docs/specs/<id>-<slug>.md` (after Acceptance Criteria). Add a `[Verify](docs/specs/<id>-<slug>.md#verification)` pointer to the KANBAN Testing-row note.
   - **Spec-less item** (trivial, inline ACs) → put the (tiny) checklist inline in the KANBAN Testing-row note.
 
-**KANBAN.md update (mode-aware):**
+**State update (mode-aware):**
 
-Source `skills/kanban/bd-helper.sh` and branch:
+Source `skills/kanban/bd-helper.sh` and branch on `bd_mode` (the `.ticket-flow`
+mode flag):
 
-**Mode A** (`.beads/` present):
+**Mode A** (`mode=beads`) — write to bd only. **Do not touch `KANBAN.md`** —
+beads mode keeps no board in the workflow; a snapshot is available on demand
+via `/ticket-flow:board`:
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/skills/kanban/bd-helper.sh"
@@ -109,12 +126,11 @@ if [[ -n "$BD_ID" ]]; then
     bd_set_status "$BD_ID" testing
   fi
 fi
-"${CLAUDE_PLUGIN_ROOT}/skills/kanban/kanban-render.sh"
 ```
 
-When a residual exists, `[Verify]` lives in the bd notes field alongside any other long-lived metadata — the renderer surfaces it in the Testing row's note column. The notes-replace pattern preserves anything that's *not* prefixed `branch:` or `[Verify]`. When fully proven, the bd issue is closed; the renderer drops it from KANBAN.md and a separate archive workflow (or `bd compact`) handles long-term storage. The `KANBAN-done.md` archive remains a Mode-B-only concept.
+When a residual exists, `[Verify]` lives in the bd notes field alongside any other long-lived metadata. The notes-replace pattern preserves anything that's *not* prefixed `branch:` or `[Verify]`. When fully proven, the bd issue is closed. bd is the source of truth — there is no KANBAN.md to refresh and no render; `bd compact` (or `bd list --status=closed`) handles long-term storage. The `KANBAN-done.md` archive remains a Mode-B-only concept. A static board snapshot, if wanted, is `/ticket-flow:board`.
 
-**Mode B** (no `.beads/`):
+**Mode B** (`mode=kanban`):
 
 - Remove the item from **In Progress**.
 - **Residual exists** → insert into **Testing** (top); **no residual** → append to `KANBAN-done.md` instead (skip Testing).
@@ -222,7 +238,7 @@ This is escalation, not auto-fix — the user always sees the failure. The point
 - **Root-cause hypothesis** — the best read of what is actually blocking.
 - **Suggested next step** — one concrete, actionable suggestion for the human.
 
-**Mode A** (`.beads/` present) — file a bead (`dangerouslyDisableSandbox: true` for the `bd` call):
+**Mode A** (`mode=beads`) — file a bead (`dangerouslyDisableSandbox: true` for the `bd` call):
 
 ```bash
 bd create --type=bug --priority=1 --title="blocked: <short task title>" \
@@ -239,7 +255,7 @@ bd create --type=bug --priority=1 --title="blocked: <short task title>" \
 <…>"
 ```
 
-**Mode B** (no `.beads/`) — add the same four-section block as a new bug item in the KANBAN.md Inbox intake zone (or `gh issue create` if the project tracks blockers on GitHub).
+**Mode B** (`mode=kanban`) — add the same four-section block as a new bug item in the KANBAN.md Inbox (or `gh issue create` if the project tracks blockers on GitHub).
 
 Then report to the user: the raw error **and** the escalation issue id. A typecheck/test failure that is a normal code bug is **not** a hard blocker — that goes back to `/ticket-flow:implement` as before.
 

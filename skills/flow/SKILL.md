@@ -129,9 +129,9 @@ Skip in --local (the default): classic mode doesn't clean anything (no spawn →
 
 Before pickup, check whether the item's spec still has design decisions that need a human pick.
 
-1. **Find the spec** — mode-aware:
-   - **Mode A** (`.beads/` present): source `skills/kanban/bd-helper.sh`; `BD_ID="$(bd_id_for "$ID")"`; `SPEC_PATH="$(bd_get_notes "$BD_ID" | grep -oE '\[Spec\]\([^)]+\)' | head -1 | sed 's/^\[Spec\](\(.*\))$/\1/')"`. Fallback to convention `docs/specs/<id>-*.md` (first match) when notes are empty. No spec found → no gate, continue.
-   - **Mode B**: the `[Spec](docs/specs/<id>-<slug>.md)` link in the `<id>` row's note in KANBAN.md. No spec link → no gate, continue to step 2.
+1. **Find the spec** — the path is decided by the `.ticket-flow` mode flag:
+   - **Mode A** (`mode=beads`): source `skills/kanban/bd-helper.sh`; `BD_ID="$(bd_id_for "$ID")"`; `SPEC_PATH="$(bd_get_notes "$BD_ID" | grep -oE '\[Spec\]\([^)]+\)' | head -1 | sed 's/^\[Spec\](\(.*\))$/\1/')"`. Fallback to convention `docs/specs/<id>-*.md` (first match) when notes are empty. **Do not read `KANBAN.md`.** No spec found → no gate, continue.
+   - **Mode B** (`mode=kanban`): the `[Spec](docs/specs/<id>-<slug>.md)` link in the `<id>` row's note in KANBAN.md. No spec link → no gate, continue to step 2.
 2. **Read the spec.** Does it have a `## Decisions` section with `### D1…` entries?
    - **No `## Decisions` section** → nothing to resolve, continue to step 2.
    - **`## Decisions` present AND a `## Decision Log` that covers every `D#`** → already resolved (locked via the `/ticket-flow:spec` review step), continue to step 2.
@@ -264,7 +264,7 @@ On OK: `Skill(ticket-flow:finish)`. On failure: stop, inform the user. No auto r
 
 ### 7. Final report (only when --local)
 
-In **Mode A**, after `/finish` closes the bd state, refresh the report from bd rather than re-reading KANBAN.md:
+In **Mode A** (`mode=beads`), after `/finish` closes the bd state, build the report from bd — there is no KANBAN.md in beads mode:
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/skills/kanban/bd-helper.sh"
@@ -287,7 +287,7 @@ Kanban → Testing                              # Mode B equivalent
 Manual verification pending.
 ```
 
-In **Mode B** the original KANBAN.md → Testing wording is correct verbatim.
+In **Mode B** (`mode=kanban`) the original KANBAN.md → Testing wording is correct verbatim.
 
 ## Parallel mode (`--parallel`)
 
@@ -299,7 +299,7 @@ This is the native replacement for the Ghostty `--spawn` mode (`ticket-flow-x71`
 
 ### P1. Resolve the ticket set
 
-- **No id** → the whole ready queue: `bd ready` (Mode A) or the Backlog section of KANBAN.md (Mode B). Keep only DoR-met items (same DoR as `/ticket-flow:pickup` step 2).
+- **No id** → the whole ready queue: `bd ready` (Mode A, `mode=beads`) or the Backlog section of KANBAN.md (Mode B, `mode=kanban`). Keep only DoR-met items (same DoR as `/ticket-flow:pickup` step 2).
 - **Explicit ids** → validate each is in Backlog + DoR-met; a bad id aborts the whole batch with a clear error.
 - **Empty set** → report "nothing ready" and stop.
 
@@ -309,14 +309,17 @@ Run the step 1.6 decision gate for **every** ticket in the set. If **any** ticke
 
 ### P3. Mark all tickets In Progress (controller, sequential)
 
-Before dispatch, the **controller** moves every ticket Backlog → In Progress — sequentially, in the main repo. **Only the controller ever writes `.beads/` / KANBAN.md.** Subagents never touch bd state — that keeps `.beads/issues.jsonl` from diverging across worktrees and merge-conflicting.
+Before dispatch, the **controller** moves every ticket Backlog → In Progress — sequentially, in the main repo. **Only the controller ever writes `.beads/` (Mode A) / KANBAN.md (Mode B).** Subagents never touch ticket state — that keeps `.beads/issues.jsonl` (or KANBAN.md) from diverging across worktrees and merge-conflicting.
+
+**Mode A** (`mode=beads`) — write to bd only, **no KANBAN.md, no render**:
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/skills/kanban/bd-helper.sh"
 # per ticket:
 BD_ID="$(bd_id_for "$ID")"; bd_set_status "$BD_ID" in_progress
-"${CLAUDE_PLUGIN_ROOT}/skills/kanban/kanban-render.sh"
 ```
+
+**Mode B** (`mode=kanban`) — per ticket, move the row Backlog → In Progress in KANBAN.md (same edit `/ticket-flow:pickup` step 5 Mode B does).
 
 The `branch:` lock marker is **not** set here — each subagent's branch (`worktree-agent-<hash>`) only exists once its worktree is created. In `--parallel` the controller tracks the branch↔ticket mapping in-session instead.
 
@@ -357,7 +360,7 @@ For each ticket whose subagent succeeded, **one at a time** — never two at onc
 
 1. `cd <main-repo>` — commit `.beads/` if dirty (the dirty-`.beads`-blocks-merge gotcha).
 2. `git merge <worktree-agent-branch>` — on a conflict: stop this ticket, leave it for the user, continue with the rest.
-3. Finish the ticket: run `skills/finish/SKILL.md` steps 6–7 — gating (residual → Testing, none → Done) from the subagent's classification, the KANBAN/bd update, `kanban-render.sh`, and worktree cleanup: **`git worktree unlock <path>` then `git worktree remove <path>`** — `Agent`-tool worktrees are created *locked* (lock owner = the Claude session), so a plain `git worktree remove` fails until unlocked. Then `git branch -D <worktree-agent-branch>`.
+3. Finish the ticket: run `skills/finish/SKILL.md` steps 6–7 — gating (residual → Testing, none → Done) from the subagent's classification, the state update (bd in Mode A, KANBAN.md in Mode B — never `kanban-render.sh` in the workflow), and worktree cleanup: **`git worktree unlock <path>` then `git worktree remove <path>`** — `Agent`-tool worktrees are created *locked* (lock owner = the Claude session), so a plain `git worktree remove` fails until unlocked. Then `git branch -D <worktree-agent-branch>`.
 4. On a reported hard blocker: file the escalation bead now, controller-side, per `skills/implement/SKILL.md` § Escalation on a hard blocker.
 
 ### P7. Final report

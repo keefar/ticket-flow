@@ -56,21 +56,40 @@ echo "✓ /ticket-flow:spec for #$ID dispatched to Ghostty tab (UUID: $TAB_UUID)
 
 ## Prerequisites
 
-- The item must exist in `KANBAN.md` (project root) in Inbox / Backlog / In Progress / Testing.
-- Items in ROADMAP.md are out of scope — triage them into KANBAN.md Inbox first.
+- The item must already exist as a tracked ticket:
+  - **Mode A** (`mode=beads`): a bd issue with a `kanban-<id>` label.
+  - **Mode B** (`mode=kanban`): a row in `KANBAN.md` (project root) in
+    Inbox / Backlog / In Progress / Testing.
+- Items in ROADMAP.md are out of scope — triage them into bd / KANBAN.md Inbox first.
 - Template: `docs/specs/SPEC-TEMPLATE.md` (in the project).
 
 ## Steps
 
-1. **Find the item**: `grep -nE "^\| ${id} \|" KANBAN.md` → expect exactly one match. Zero → error ("item not in Kanban"). More than one → error (duplicate ID).
-2. **Extract fields** from the table row:
+1. **Find the item** — the path is decided by the `.ticket-flow` mode flag
+   (source `skills/kanban/bd-helper.sh`, branch on `bd_mode`):
+
+   **Mode A** (`mode=beads`) — resolve the bd issue, **do not read `KANBAN.md`**:
+   ```bash
+   source "${CLAUDE_PLUGIN_ROOT}/skills/kanban/bd-helper.sh"
+   BD_ID="$(bd_id_for "$id")"   # scans kanban-<id> labels
+   ```
+   Empty `BD_ID` → error ("item #<id> not tracked in bd").
+
+   **Mode B** (`mode=kanban`) — `grep -nE "^\| ${id} \|" KANBAN.md` → expect exactly one match. Zero → error ("item not in Kanban"). More than one → error (duplicate ID).
+2. **Extract fields**:
+
+   **Mode A** — from `bd show "$BD_ID" --json`: `tag` from `issue_type`
+   (`bug`/`feature`/`task→change`), `title`, `note` from the bd `notes` field,
+   `cluster` from a `cluster-<marker>` label if present (else `-`).
+
+   **Mode B** — from the KANBAN.md table row:
    - `tag`: second pipe field (strip backticks, e.g. `` `feature` `` → `feature`)
    - `title_raw`: third pipe field (full, including cluster marker)
    - `cluster`: isolate the leading `` `[xxx]` `` marker from `title_raw` (if present). Otherwise `-`.
    - `title`: `title_raw` without the cluster-marker prefix and without leading whitespace
    - `note`: fourth pipe field (keep all existing pipe sub-fields!)
 
-   No date is extracted here — KANBAN.md has only these four columns (`# · Tag · Title · Note`); it stores no creation date (see `skills/kanban/SKILL.md` `## Format`). The frontmatter `created:` is set in step 6.
+   No date is extracted in either mode — neither bd's display nor KANBAN.md's four columns (`# · Tag · Title · Note`) store a creation date. The frontmatter `created:` is set in step 6.
 3. **Build the slug**:
    - Lowercase the title, map umlauts (ä→a, ö→o, ü→u, ß→ss), all special chars → `-`, collapse multiple `-` → single `-`, strip leading/trailing `-`
    - Max 50 chars, cut at word boundary
@@ -95,9 +114,13 @@ echo "✓ /ticket-flow:spec for #$ID dispatched to Ghostty tab (UUID: $TAB_UUID)
 7. **Title heading** in the template: replace `# <Title>` with `# ${title}` (no cluster marker).
 8. **Keep the rest** verbatim — the spec author fills it in. The template's body sections are: Context, Acceptance Criteria, Out of Scope, **Reference Fork** (Cherry #7), **Testable Surfaces** (Cherry #1), **Sub-Items** (Cherry #6), References, Notes. *(In `--auto` mode the agent fills the body instead — see **Autonomous mode (`--auto`)** below.)*
 9. **`Write`** the filled spec to the target path.
-10. **Surface the spec link + status marker** — mode-aware:
+10. **Surface the spec link + status marker** — the path is decided by the
+    `.ticket-flow` mode flag (`bd_mode` → `A` for `mode=beads`, `B` for
+    `mode=kanban`):
 
-    **Mode A** (`.beads/` present) — write to bd, then re-render KANBAN.md:
+    **Mode A** (`mode=beads`) — write to bd only. **Do not touch `KANBAN.md`** —
+    beads mode keeps no board in the workflow (a snapshot is available on
+    demand via `/ticket-flow:board`):
 
     ```bash
     source "${CLAUDE_PLUGIN_ROOT}/skills/kanban/bd-helper.sh"
@@ -111,12 +134,11 @@ echo "✓ /ticket-flow:spec for #$ID dispatched to Ghostty tab (UUID: $TAB_UUID)
         bd_update_notes_replace_prefix "$BD_ID" "spec:" "spec: drafting (${AUTHOR:-chris})"
       fi
     fi
-    "${CLAUDE_PLUGIN_ROOT}/skills/kanban/kanban-render.sh"
     ```
 
     The merge-safe `bd_update_notes_replace_prefix` wrappers preserve any other notes (e.g. `branch:` from a prior /pickup, `[Verify]` from a prior /finish).
 
-    **Mode B** (no `.beads/`) — hand-edit KANBAN.md:
+    **Mode B** (`mode=kanban`) — hand-edit KANBAN.md:
 
     - Rebuild the note field for the item row:
       - Keep existing pipe sub-fields (e.g. `[Plan](...)` links, `branch:` lock)
