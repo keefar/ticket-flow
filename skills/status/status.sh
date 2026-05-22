@@ -22,7 +22,7 @@ if [[ -f .ticket-flow ]] && grep -q '^mode=beads' .ticket-flow 2>/dev/null; then
 elif [[ -f .ticket-flow ]] && grep -q '^mode=kanban' .ticket-flow 2>/dev/null; then
   MODE="kanban — KANBAN.md is the source of truth"
 elif [[ -d .beads ]]; then
-  MODE="beads (legacy — no .ticket-flow flag; run /ticket-flow:bd-init to set it)"
+  MODE="beads (legacy — no .ticket-flow flag; run /ticket-flow:init --mode=beads to set it)"
 elif [[ -f KANBAN.md ]]; then
   MODE="kanban (legacy — no .ticket-flow flag; run /ticket-flow:init to set it)"
 else

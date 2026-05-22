@@ -12,8 +12,8 @@
 #                                     state ∈ inbox|backlog|in_progress|testing|done
 #
 # Mode flag: a repo-root `.ticket-flow` file, single line `mode=beads` or
-# `mode=kanban`, written once by `/ticket-flow:init` (kanban) or
-# `/ticket-flow:bd-init` (beads). `bd_mode` reads that flag — `mode=beads` → A,
+# `mode=kanban`, written once by `/ticket-flow:init` (asks interactively or
+# accepts `--mode=kanban|beads`). `bd_mode` reads that flag — `mode=beads` → A,
 # `mode=kanban` → B. Legacy fallback: when `.ticket-flow` is absent (projects
 # that predate the flag), fall back to `.beads/`-presence detection.
 #

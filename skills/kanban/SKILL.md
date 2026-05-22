@@ -27,7 +27,7 @@ repo-root `.ticket-flow` flag, never inferred from `.beads/`-presence:
 
 - `bd-helper.sh` — sourced by `pickup`, `finish`, `flow`, and the Mode-A paths in this skill. Exposes `bd_mode` (reads `.ticket-flow`), `bd_id_for <kanban#>`, `bd_set_status`, `bd_update_notes_{append,replace_prefix,remove_prefix}`. State transitions go through `bd_set_status` (canonical inbox / backlog / in_progress / testing) plus `bd close` for Done; notes edits go through the merge-safe wrappers (never `bd update --notes=` directly — that's destructive).
 - `kanban-render.sh` — generate a read-only `KANBAN.md` snapshot from bd state. **Not part of any workflow skill** — reachable only via `/ticket-flow:board`. See that skill.
-- `kanban-import.sh` — one-shot `kanban → beads` migration: parse an existing KANBAN.md's rows into bd. Idempotent (skips kanban-N labels already in bd). Invoked by `/ticket-flow:bd-init` during the mode switch, not in the steady-state workflow.
+- `kanban-import.sh` — one-shot `kanban → beads` migration: parse an existing KANBAN.md's rows into bd. Idempotent (skips kanban-N labels already in bd). Invoked by `/ticket-flow:init --mode=beads` during the mode switch, not in the steady-state workflow.
 
 ## Workflow commands (Ticket-Flow)
 

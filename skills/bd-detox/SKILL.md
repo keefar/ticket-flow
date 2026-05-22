@@ -6,13 +6,13 @@ description: Remove the anti-MEMORY.md clause from a project that already ran va
 # /ticket-flow:bd-detox — Memory-clause cleanup for existing beads projects
 
 **Args**:
-- (none) — *coexistence mode*: keep AGENTS.md, remove the anti-MEMORY line, append the Memory Coexistence Policy section from `templates/beads-agents-no-anti-memory.md`. Equivalent end-state to a fresh `bd-init` (default mode).
-- `--skip-agents` — *purge mode*: delete `AGENTS.md` entirely, strip the `BEADS INTEGRATION` block from `CLAUDE.md`. Equivalent end-state to a fresh `bd-init --skip-agents`. Recommended for tf users on the Auto-Memory + CLAUDE.md stack.
+- (none) — *coexistence mode*: keep AGENTS.md, remove the anti-MEMORY line, append the Memory Coexistence Policy section from `templates/beads-agents-no-anti-memory.md`. Equivalent end-state to a fresh `/ticket-flow:init --mode=beads` (default mode).
+- `--skip-agents` — *purge mode*: delete `AGENTS.md` entirely, strip the `BEADS INTEGRATION` block from `CLAUDE.md`. Equivalent end-state to a fresh `/ticket-flow:init --mode=beads --skip-agents`. Recommended for tf users on the Auto-Memory + CLAUDE.md stack.
 - `--dry-run` — show the planned changes without writing.
 
 ## What it does
 
-`bd-init` only handles **fresh** beads projects. Projects that already ran vanilla `bd init` have the anti-MEMORY clause baked into `AGENTS.md` plus a `BEADS INTEGRATION` block in `CLAUDE.md`, both of which override Claude Code's Auto-Memory system. This skill is the after-the-fact cleanup.
+`/ticket-flow:init --mode=beads` only handles **fresh** beads projects (it scaffolds with tf's custom agents-template). Projects that already ran vanilla `bd init` have the anti-MEMORY clause baked into `AGENTS.md` plus a `BEADS INTEGRATION` block in `CLAUDE.md`, both of which override Claude Code's Auto-Memory system. This skill is the after-the-fact cleanup.
 
 **Caveat**: `bd prime`'s SessionStart-Hook still emits the *"Do NOT use MEMORY.md files"* line at runtime — that's hardcoded in the bd binary, not in init-generated files. No known mute flag. This skill cannot suppress it.
 
@@ -20,7 +20,7 @@ description: Remove the anti-MEMORY.md clause from a project that already ran va
 
 The skill delegates to `skills/bd-detox/bd-detox.sh`. The script:
 
-1. **Preflight** — current dir is a git repo (`git rev-parse --git-dir`) and contains `.beads/`. If not, abort with hint (`bd-detox is for existing beads projects; use /ticket-flow:bd-init for fresh ones`).
+1. **Preflight** — current dir is a git repo (`git rev-parse --git-dir`) and contains `.beads/`. If not, abort with hint (`bd-detox is for existing beads projects; use /ticket-flow:init --mode=beads for fresh ones`).
 2. **Detect contamination** — grep `AGENTS.md` and `CLAUDE.md` for the marker strings:
    - `do NOT use MEMORY.md`
    - `BEADS INTEGRATION` (block header in CLAUDE.md)
@@ -45,7 +45,7 @@ Re-running on an already-detoxed project is a no-op:
 
 ## When NOT to run
 
-- Fresh project without `.beads/` → use `/ticket-flow:bd-init` instead
+- Fresh project without `.beads/` → use `/ticket-flow:init --mode=beads` instead
 - Project where you *want* bd's stock guidance (team setting) → leave as-is
 - Mid-flow worktree → finish the flow first, then detox on main
 
@@ -53,5 +53,5 @@ Re-running on an already-detoxed project is a no-op:
 
 - **`AGENTS.md` was hand-edited beyond recognition**: the line-strip might miss it. Script warns and asks for manual review.
 - **`CLAUDE.md` BEADS INTEGRATION block was reformatted**: matched by its `profile:` marker line, not exact text. If marker missing, script reports "couldn't locate BEADS INTEGRATION block — manual cleanup needed".
-- **Custom-template-style AGENTS.md (already detoxed via bd-init custom template)**: script detects the Memory Coexistence Policy section and treats the file as clean.
+- **Custom-template-style AGENTS.md (already detoxed via init custom template)**: script detects the Memory Coexistence Policy section and treats the file as clean.
 - **No `.beads/`** (Mode B): script aborts — there's nothing for bd-detox to clean.

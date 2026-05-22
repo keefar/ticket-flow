@@ -1,6 +1,6 @@
 # ticket-flow
 
-A **kanban- or beads-backed** ticket workflow for Claude Code — a spec → pickup → implement → finish pipeline plus an orchestrator, every ticket worked in its own isolated git worktree. Pick the backend at setup (`/ticket-flow:init` for kanban, `/ticket-flow:bd-init` for beads); see **Operating modes** below.
+A **kanban- or beads-backed** ticket workflow for Claude Code — a spec → pickup → implement → finish pipeline plus an orchestrator, every ticket worked in its own isolated git worktree. `/ticket-flow:init` asks which backend at setup; see **Operating modes** below.
 
 - `/ticket-flow:init` — scaffold a project for ticket-flow (run once)
 - `/ticket-flow:spec <id>` — create a spec doc from template; `--auto` drafts the whole spec non-interactively
@@ -11,16 +11,16 @@ A **kanban- or beads-backed** ticket workflow for Claude Code — a spec → pic
 - `/ticket-flow:kanban` — board maintenance
 - `/ticket-flow:board` — generate a read-only `KANBAN.md` snapshot from bd state (beads mode)
 
-Setup & maintenance: `/ticket-flow:bd-init`, `/ticket-flow:bd-detox`, `/ticket-flow:discover`, `/ticket-flow:status`, `/ticket-flow:publish`, `/ticket-flow:push`.
+Setup & maintenance: `/ticket-flow:bd-detox`, `/ticket-flow:discover`, `/ticket-flow:status`, `/ticket-flow:publish`, `/ticket-flow:push`.
 
 ## Operating modes
 
 ticket-flow runs in one of two modes, recorded in a `.ticket-flow` file at the project root and chosen once at setup:
 
-- **`mode=kanban`** — `KANBAN.md` is the source of truth. Zero extra tooling. `/ticket-flow:init` sets this up.
-- **`mode=beads`** — [beads](https://github.com/gastownhall/beads) (a Dolt-backed issue tracker) is the source of truth: dependency graph, ready-computation, cross-session persistence. `/ticket-flow:bd-init` sets this up — and migrates an existing `KANBAN.md` into bd. In beads mode no skill reads or writes `KANBAN.md`; `/ticket-flow:board` regenerates a static snapshot on demand.
+- **`mode=kanban`** — `KANBAN.md` is the source of truth. Zero extra tooling.
+- **`mode=beads`** — [beads](https://github.com/gastownhall/beads) (a Dolt-backed issue tracker) is the source of truth: dependency graph, ready-computation, cross-session persistence. In beads mode no skill reads or writes `KANBAN.md`; `/ticket-flow:board` regenerates a static snapshot on demand.
 
-Pick `kanban` for a lightweight, dependency-free board; pick `beads` for a dependency graph and cross-session memory. Every skill reads the `.ticket-flow` flag and branches accordingly — switching later is a one-way `/ticket-flow:bd-init` migration. (Projects predating the flag fall back to `.beads/`-presence detection.)
+`/ticket-flow:init` asks which mode on first run (or pass `--mode=kanban|beads` to skip the question). Pick `kanban` for a lightweight, dependency-free board; pick `beads` for a dependency graph and cross-session memory. Every skill reads the `.ticket-flow` flag and branches accordingly — switching later is a one-way migration (`/ticket-flow:init --mode=beads` re-run on a kanban project imports `KANBAN.md` into bd and archives it). (Projects predating the flag fall back to `.beads/`-presence detection.)
 
 ## Installation
 
@@ -73,7 +73,7 @@ ticket-flow needs no macOS-specific tooling — `--local` and `--parallel` run a
 
 ## Project requirements
 
-The plugin operates on these conventions in each project (all scaffolded by `/ticket-flow:init` or `/ticket-flow:bd-init`):
+The plugin operates on these conventions in each project (all scaffolded by `/ticket-flow:init`):
 
 | Path | Purpose |
 |---|---|
@@ -88,8 +88,9 @@ The plugin operates on these conventions in each project (all scaffolded by `/ti
 Quick scaffold for a new project — in Claude Code, from the project root:
 
 ```
-/ticket-flow:init        # kanban mode
-/ticket-flow:bd-init     # beads mode (also migrates an existing KANBAN.md)
+/ticket-flow:init                 # interactive — asks kanban or beads
+/ticket-flow:init --mode=kanban   # non-interactive: kanban mode
+/ticket-flow:init --mode=beads    # non-interactive: beads mode (also migrates an existing KANBAN.md)
 ```
 
 Branch naming: `worktree-<id>-<slug>` (from EnterWorktree) or `<tag>/<id>-<slug>` (manual fallback).

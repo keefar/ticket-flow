@@ -28,7 +28,7 @@ ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 [[ -z "$ROOT" ]] && { echo "ERROR: not a git repo" >&2; exit 1; }
 cd "$ROOT" || exit 1
 
-[[ -d .beads ]] || { echo "ERROR: no .beads/ in $ROOT — bd-detox is for existing beads projects; use /ticket-flow:bd-init for fresh ones" >&2; exit 1; }
+[[ -d .beads ]] || { echo "ERROR: no .beads/ in $ROOT — bd-detox is for existing beads projects; use /ticket-flow:init --mode=beads for fresh ones" >&2; exit 1; }
 
 CLAUSE_MARKER='do NOT use MEMORY.md'
 INTEGRATION_HEADER='BEADS INTEGRATION'
