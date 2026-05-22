@@ -1,6 +1,6 @@
 # ticket-flow
 
-Kanban + git-worktree based ticket workflow for Claude Code. A spec → pickup → implement → finish pipeline plus an orchestrator — every ticket worked in its own isolated git worktree.
+A **kanban- or beads-backed** ticket workflow for Claude Code — a spec → pickup → implement → finish pipeline plus an orchestrator, every ticket worked in its own isolated git worktree. Pick the backend at setup (`/ticket-flow:init` for kanban, `/ticket-flow:bd-init` for beads); see **Operating modes** below.
 
 - `/ticket-flow:init` — scaffold a project for ticket-flow (run once)
 - `/ticket-flow:spec <id>` — create a spec doc from template; `--auto` drafts the whole spec non-interactively
