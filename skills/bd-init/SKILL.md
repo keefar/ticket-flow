@@ -23,7 +23,11 @@ Other passthroughs supported: `--stealth`, `--non-interactive`, `--prefix`, `--r
 
 ## What it does
 
-Wraps `bd init` with one of the two memory-neutralization paths above.
+Wraps `bd init` with one of the two memory-neutralization paths above, then
+flips the project into **beads mode**: writes the `.ticket-flow` mode flag
+(`mode=beads`), migrates any existing `KANBAN.md` into bd, and archives the
+old board. From then on every workflow skill runs the beads path and never
+touches `KANBAN.md` — see `docs/architecture.md` and spec #23.
 
 **Default custom template** (`templates/beads-agents-no-anti-memory.md`):
 
@@ -44,9 +48,39 @@ Rationale: vanilla `bd init` overrides user's existing Auto-Memory system by inj
 5. **Verify after init**:
    - skip-agents mode → no `AGENTS.md` exists in cwd; `CLAUDE.md` does not contain a `BEADS INTEGRATION` block. If either is present, the flag wasn't honored — warn the user.
    - custom-template mode → `AGENTS.md` does NOT contain the string `do NOT use MEMORY.md`. If it does, the template wasn't honored — warn and suggest checking `--agents-template` manually.
-6. Print confirmation:
+6. **One-time `kanban → beads` migration** (only when `bd init` succeeded). This
+   flips the project into pure beads mode — the workflow stops touching
+   `KANBAN.md` entirely (see `docs/architecture.md`, spec #23).
+
+   ```bash
+   ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+
+   # a. If a KANBAN.md with items already exists, import every row into bd.
+   #    kanban-import.sh is idempotent (skips kanban-N labels already in bd).
+   if [[ -f "$ROOT/KANBAN.md" ]]; then
+     ( cd "$ROOT" && "$CLAUDE_PLUGIN_ROOT/skills/kanban/kanban-import.sh" )
+   fi
+
+   # b. Write the mode flag.
+   printf 'mode=beads\n' > "$ROOT/.ticket-flow"
+
+   # c. Archive the old board — beads mode never reads KANBAN.md again.
+   #    KANBAN.archived.md is kept for history, not deleted.
+   if [[ -f "$ROOT/KANBAN.md" ]]; then
+     mv "$ROOT/KANBAN.md" "$ROOT/KANBAN.archived.md"
+   fi
+   ```
+
+   - **KANBAN.md present with items** → import → write flag → archive.
+   - **KANBAN.md absent** (fresh repo, beads from the start) → just write
+     `.ticket-flow` = `mode=beads`; nothing to import or archive.
+   - The archived board can be regenerated on demand from bd state with
+     `/ticket-flow:board` — it is no longer a workflow artifact.
+
+7. Print confirmation:
    - skip-agents → `bd initialized with --skip-agents — no AGENTS.md, no BEADS INTEGRATION block in CLAUDE.md. (bd prime runtime output still mentions MEMORY.md — known caveat.)`
    - custom-template → `bd initialized with tf custom template — Auto-Memory + bd remember coexist`.
+   - Always append the mode line: `Mode flag written: .ticket-flow → mode=beads.` and, when a KANBAN.md was migrated, `Migrated <N> item(s) into bd · KANBAN.md → KANBAN.archived.md.`
 
 ## Note on existing beads projects
 

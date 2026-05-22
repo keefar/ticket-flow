@@ -11,10 +11,16 @@ description: Scaffold KANBAN.md + SPEC-TEMPLATE.md in an empty project. Run once
 
 Creates the minimum file layout ticket-flow expects in a project:
 
+- `.ticket-flow` — the mode flag; `init` writes `mode=kanban` (init is the kanban-primary entry point)
 - `KANBAN.md` — board with Inbox · Backlog · In Progress · Testing · Done columns + Definition of Ready
 - `docs/specs/SPEC-TEMPLATE.md` — template that `/ticket-flow:spec` copies from
 - `docs/superpowers/plans/.gitkeep` — directory for implementation plans (used by `superpowers:writing-plans`)
 - `.claude/worktrees/` — directory where `/ticket-flow:pickup` creates branch worktrees
+
+The mode flag is the **single source of mode truth** for every workflow skill —
+`.beads/`-presence detection is only a legacy fallback. `init` scaffolds
+`mode=kanban`; switching a project to beads mode is `/ticket-flow:bd-init`'s
+job (it rewrites the flag to `mode=beads` and runs the one-time migration).
 
 **Idempotent**: re-running on a project that already has some of these files only creates the missing ones. Existing files are never overwritten or modified.
 
@@ -64,16 +70,29 @@ if [[ ! -f "./docs/superpowers/plans/.gitkeep" ]]; then
   CREATED+=("./docs/superpowers/plans/.gitkeep")
 fi
 scaffold_dir  "./.claude/worktrees"
+
+# Mode flag — init is the kanban-primary entry point. Idempotent: an existing
+# `.ticket-flow` is never overwritten (a project may already be in beads mode).
+if [[ -e "./.ticket-flow" ]]; then
+  SKIPPED+=("./.ticket-flow")
+else
+  printf 'mode=kanban\n' > "./.ticket-flow"
+  CREATED+=("./.ticket-flow")
+fi
 ```
 
 ## Report
 
 ```
 ✓ ticket-flow scaffolding in <cwd>:
+  [created] .ticket-flow (mode=kanban)
   [created] KANBAN.md
   [created] docs/specs/SPEC-TEMPLATE.md
   [created] docs/superpowers/plans/
   [exists, skipped] .claude/worktrees/
+
+Mode: kanban-primary — KANBAN.md is the source of truth.
+To switch to beads mode later: /ticket-flow:bd-init (migrates + flips the flag).
 
 Next steps:
 1. Inspect KANBAN.md → capture first item in Inbox

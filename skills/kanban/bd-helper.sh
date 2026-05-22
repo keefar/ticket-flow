@@ -2,29 +2,67 @@
 # bd-helper.sh — shared helpers for Mode-aware skills (pickup, finish, kanban).
 #
 # Sourced by other skill scripts. Provides:
-#   bd_available           — exits 0 if Mode A (`.beads/` present + bd binary in PATH), 1 otherwise
-#   bd_mode                — echoes "A" or "B" (no exit code matter)
+#   bd_available           — exits 0 if Mode A (flag says `beads` + bd binary in PATH), 1 otherwise
+#   bd_mode                — echoes "A" (beads) or "B" (kanban), resolved from the
+#                            repo-root `.ticket-flow` flag file
 #   bd_id_for <kanban-num> — resolves kanban# → bd-id by scanning labels (`kanban-<N>`)
 #                            on stdout. Exit 1 (and empty stdout) when not found.
 #   bd_kanban_for <bd-id>  — inverse — resolves bd-id → kanban# via the same label.
 #   bd_set_status <bd-id> <state>  — wraps the right bd commands per kanban transition
 #                                     state ∈ inbox|backlog|in_progress|testing|done
 #
+# Mode flag: a repo-root `.ticket-flow` file, single line `mode=beads` or
+# `mode=kanban`, written once by `/ticket-flow:init` (kanban) or
+# `/ticket-flow:bd-init` (beads). `bd_mode` reads that flag — `mode=beads` → A,
+# `mode=kanban` → B. Legacy fallback: when `.ticket-flow` is absent (projects
+# that predate the flag), fall back to `.beads/`-presence detection.
+#
 # Sandbox: bd writes need `dangerouslyDisableSandbox: true`. Read-only calls
 # (bd list, bd show) work in normal sandbox.
 
 set -u
 
-bd_available() {
-  [[ -d .beads ]] && command -v bd >/dev/null 2>&1
+# Locate the repo-root `.ticket-flow` flag file. Echoes its path if found
+# (searched from the git toplevel, falling back to cwd), empty otherwise.
+__bd_flag_file() {
+  local root
+  root="$(git rev-parse --show-toplevel 2>/dev/null)"
+  [[ -z "$root" ]] && root="."
+  if [[ -f "$root/.ticket-flow" ]]; then
+    echo "$root/.ticket-flow"
+  fi
+}
+
+# Echo the mode token from `.ticket-flow` (`beads` / `kanban`), or empty when
+# the flag file is absent or has no `mode=` line.
+__bd_flag_mode() {
+  local f
+  f="$(__bd_flag_file)"
+  [[ -z "$f" ]] && return 0
+  local line
+  line="$(grep -E '^mode=' "$f" 2>/dev/null | head -1 | sed 's/^mode=//' | tr -d '[:space:]')"
+  echo "$line"
 }
 
 bd_mode() {
-  if bd_available; then
-    echo "A"
-  else
-    echo "B"
-  fi
+  local flag
+  flag="$(__bd_flag_mode)"
+  case "$flag" in
+    beads)  echo "A" ;;
+    kanban) echo "B" ;;
+    *)
+      # Legacy fallback: no `.ticket-flow` flag (project predates it).
+      if [[ -d .beads ]]; then
+        echo "A"
+      else
+        echo "B"
+      fi
+      ;;
+  esac
+}
+
+bd_available() {
+  [[ "$(bd_mode)" == "A" ]] && command -v bd >/dev/null 2>&1
 }
 
 # Resolve kanban# → bd-id by scanning labels. Caches the bd list output in memory.
