@@ -89,31 +89,7 @@ Spec ACs met: <met>/<total> (if a spec exists)
 Typecheck/test: <status>
 ```
 
-On implementation failure: stop, report the error, **do not execute step 7** (no auto-finish; set status=error if KANBAN_ID is set — see below). If the failure is a *hard blocker* — external auth, a missing dependency, or a verification that keeps failing after a genuine attempt — also file a structured escalation issue before reporting (see **§ Escalation on a hard blocker**).
-
-### 7. Spawn-mode auto-handoff (only when `KANBAN_ID` env var is set)
-
-`KANBAN_ID` is set when this session was started via `spawn-ghostty.sh` from `/flow`. Otherwise skip — the user sees the standard report and decides for themselves.
-
-**On implementation success:**
-
-Auto-handoff to `/ticket-flow:finish`. No user checkpoint in between. Directly:
-
-```
-Skill(ticket-flow:finish)
-```
-
-**On implementation failure** (tests red, build broken, plan step fails) — emit `error` (tab title 🔴, status `error` + `error_message`, Basso notification):
-
-```bash
-"${CLAUDE_PLUGIN_ROOT}/skills/flow/flow-status.sh" error "$KANBAN_ID" "$ERROR_MSG"
-```
-
-`flow-status.sh` resolves the repo root via `--git-common-dir` (worktree-safe) and handles tab title + status file + macOS notification atomically. No-op in standalone mode (KANBAN_ID unset).
-
-Leave the tab open — the user can review output. NO auto-finish.
-
-**Standalone mode (KANBAN_ID not set):** the helper is a no-op. Classic flow: the user decides whether to run /ticket-flow:finish.
+On implementation failure: stop, report the error (no auto-finish — the user decides whether to run `/ticket-flow:finish`). If the failure is a *hard blocker* — external auth, a missing dependency, or a verification that keeps failing after a genuine attempt — also file a structured escalation issue before reporting (see **§ Escalation on a hard blocker**).
 
 ## Subagent dispatch pattern (for research items)
 

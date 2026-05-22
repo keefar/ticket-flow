@@ -16,11 +16,15 @@ BRANCH="$(git branch --show-current 2>/dev/null)"
 echo "ticket-flow @ $ROOT  (branch: $BRANCH)"
 echo
 
-# --- Mode detection ---
-if [[ -d .beads ]]; then
-  MODE="A — beads-first"
+# --- Mode detection (the .ticket-flow flag; .beads/-presence is the legacy fallback) ---
+if [[ -f .ticket-flow ]] && grep -q '^mode=beads' .ticket-flow 2>/dev/null; then
+  MODE="beads — bd is the source of truth"
+elif [[ -f .ticket-flow ]] && grep -q '^mode=kanban' .ticket-flow 2>/dev/null; then
+  MODE="kanban — KANBAN.md is the source of truth"
+elif [[ -d .beads ]]; then
+  MODE="beads (legacy — no .ticket-flow flag; run /ticket-flow:bd-init to set it)"
 elif [[ -f KANBAN.md ]]; then
-  MODE="B — kanban-primary"
+  MODE="kanban (legacy — no .ticket-flow flag; run /ticket-flow:init to set it)"
 else
   MODE="none — no scaffolding yet"
 fi
@@ -67,22 +71,7 @@ fi
 # --- In-flight work ---
 WT_COUNT=0
 [[ -d .claude/worktrees ]] && WT_COUNT="$(find .claude/worktrees -mindepth 1 -maxdepth 1 -type d ! -name '.DS_Store' 2>/dev/null | wc -l | tr -d ' ')"
-
-IMPL_COUNT=0
-IMPL_STALE=0
-if [[ -d .claude/impl-status ]]; then
-  for f in .claude/impl-status/*.json; do
-    [[ -e "$f" ]] || continue
-    IMPL_COUNT=$((IMPL_COUNT + 1))
-    # Stale = >24h old AND status not done/error (best-effort check via mtime + grep)
-    if [[ $(find "$f" -mtime +1 -print 2>/dev/null) ]] && ! grep -q '"status"[[:space:]]*:[[:space:]]*"\(done\|error\)"' "$f" 2>/dev/null; then
-      IMPL_STALE=$((IMPL_STALE + 1))
-    fi
-  done
-fi
-printf "IN-FLIGHT:           %d worktrees, %d impl-status files" "$WT_COUNT" "$IMPL_COUNT"
-(( IMPL_STALE > 0 )) && printf " (%d stale)" "$IMPL_STALE"
-printf "\n"
+printf "IN-FLIGHT:           %d worktree(s) under .claude/worktrees\n" "$WT_COUNT"
 
 # --- Beads ---
 BD_TOTAL=0
@@ -145,10 +134,8 @@ else
   CLEAN+=("Working tree clean")
 fi
 
-if (( IMPL_STALE > 0 )); then
-  RECS+=("Run \`/ticket-flow:flow cleanup --stale\` — $IMPL_STALE stale impl-status file(s)")
-elif (( IMPL_COUNT > 0 )); then
-  RECS+=("$IMPL_COUNT in-flight spawn(s) — check \`/ticket-flow:flow cleanup --dry-run\` first")
+if (( WT_COUNT > 0 )); then
+  RECS+=("$WT_COUNT worktree(s) under .claude/worktrees — \`git worktree list\` to review; a --parallel run that errored can leave stale ones (\`git worktree remove\`)")
 fi
 
 if (( BD_IN_PROGRESS > 0 )); then

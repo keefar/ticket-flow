@@ -182,40 +182,9 @@ If **→ Testing**: state the residual in one line + point at the `[Verify]` che
 
 If **→ Done** (no residual): say so explicitly — no manual test needed, the item is already in KANBAN-done.md.
 
-### 9. Spawn-mode status + notification (only when `KANBAN_ID` env var is set)
+**Note**: `/ticket-flow:finish` does NOT run `git push`. The merge produces a local-only commit on `main`. The user pushes from the main session via `/ticket-flow:push`. Rationale: network ops can hang on auth prompts; running push from the main session surfaces them immediately. See spec `docs/specs/5-push-from-main-session.md`.
 
-`KANBAN_ID` is set when this session was started via `spawn-ghostty.sh` from `/ticket-flow:flow` (or passed through from `/ticket-flow:implement`). `flow-status.sh` is a no-op when `KANBAN_ID` is unset, so a single call covers both spawn-mode and standalone-mode (it just becomes a no-op in standalone).
-
-**On finish success** — emit `ready-to-push` (tab title 🟢, status `done` + `ready_to_push=true`, Glass notification):
-
-```bash
-"${CLAUDE_PLUGIN_ROOT}/skills/flow/flow-status.sh" ready-to-push "$KANBAN_ID"
-```
-
-`flow-status.sh` resolves the repo root via `--git-common-dir` (works from inside the worktree) before step 7 (worktree cleanup) destroys cwd; call this BEFORE step 7 to be safe.
-
-Then spawn-tab self-close (tab UUID from status file — not handled by flow-status.sh because it's a one-off):
-
-```bash
-REPO="$(git rev-parse --path-format=absolute --git-common-dir)" && REPO="$(dirname "$REPO")"
-STATUS_FILE="$REPO/.claude/impl-status/${KANBAN_ID}.json"
-TAB_UUID="$(jq -r '.tab_uuid // empty' "$STATUS_FILE" 2>/dev/null)"
-if [[ -n "$TAB_UUID" ]]; then
-  osascript -e "tell application id \"com.mitchellh.ghostty\" to close terminal id \"$TAB_UUID\"" >/dev/null 2>&1 || true
-fi
-```
-
-The AppleScript-initiated close bypasses Ghostty's `confirm-close-surface` prompt. The status file is already `done`; the pre-spawn cleanup in the next `/ticket-flow:flow` removes worktree + branch + status file. If AppleScript is blocked (permission revoked after spawn): non-fatal — tab stays open, next flow's pre-spawn cleanup catches up.
-
-**Note**: `/ticket-flow:finish` does NOT run `git push`. The merge produces a local-only commit on `main`. User pushes from the main session via `/ticket-flow:push` (sweeps all `ready_to_push: true` items). Rationale: network ops in spawn hang silently on auth prompts; main session surfaces them immediately. See spec `docs/specs/5-push-from-main-session.md`.
-
-**On finish failure** (typecheck red, deploy fails, merge conflict) — emit `error` (tab title 🔴, status `error`, Basso notification):
-
-```bash
-"${CLAUDE_PLUGIN_ROOT}/skills/flow/flow-status.sh" error "$KANBAN_ID" "<short error description>"
-```
-
-NO auto rollback. The worktree stays for manual inspection. **NO tab close** — the tab stays open, the user reviews output. Next `/ticket-flow:flow`'s pre-spawn cleanup detects `status: error`, skips cleanup, and surfaces the case to the user.
+**On finish failure** (typecheck red, deploy fails, merge conflict): NO auto rollback. The worktree stays for manual inspection — the user reviews output and decides how to proceed.
 
 ## Edge cases
 

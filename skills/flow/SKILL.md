@@ -1,21 +1,16 @@
 ---
 name: flow
-description: Orchestrator for Ticket-Flow — default is `--local` (all phases in this session with user checkpoints). `--parallel` works multiple ready tickets at once via worktree-isolated subagents in this session. `--spawn` spawns implement→finish into a new Ghostty tab (broken on Ghostty 1.3.1, see ticket-flow-k9h). Invoke as `/ticket-flow:flow <kanban-id>`, `/ticket-flow:flow --parallel [<id>…]`, or `/ticket-flow:flow cleanup`.
+description: Orchestrator for Ticket-Flow — default is `--local` (all phases in this session with user checkpoints). `--parallel` works multiple ready tickets at once via worktree-isolated subagents in this session. Invoke as `/ticket-flow:flow <kanban-id>` or `/ticket-flow:flow --parallel [<id>…]`.
 ---
 
 # /flow — Ticket-Flow orchestrator
 
 **Args**:
-- Run mode: `<kanban-id>` (required — *except* with `--parallel`) · `<branch-suffix>` (optional, forwarded to /pickup) · `--parallel` (optional — work multiple tickets at once via worktree-isolated subagents; with no id = the whole ready queue, see **## Parallel mode**) · `--spawn` (optional, opt-in for Ghostty spawn mode; **currently broken on Ghostty 1.3.1 — see ticket-flow-k9h**) · `--local` (optional, **the default** — kept as explicit flag for symmetry) · `--decisions a,b,c` / `--use-recommendations` (optional, mutually exclusive — resolve the spec's `## Decisions` section; see step 1.6; `--decisions` is rejected with `--parallel`).
-- Cleanup mode: first arg `cleanup`, optional `<kanban-id>` for selective sweep, optional `--stale` to also remove stale-running entries (tab gone, status never reached done/error), optional `--dry-run` for report-only.
-
-## Default change — 2026-05-18
-
-Until 2026-05-18, the default mode was **spawn**. After a live test surfaced a Ghostty 1.3.1 AppleScript regression (`ticket-flow-k9h`) that breaks `input text` on AS-created tabs, the default flipped to **--local**. The spawn path is preserved (`--spawn` opt-in) so it can be re-tested when Ghostty fixes the regression.
+- `<kanban-id>` (required — *except* with `--parallel`) · `<branch-suffix>` (optional, forwarded to /pickup) · `--parallel` (optional — work multiple tickets at once via worktree-isolated subagents; with no id = the whole ready queue, see **## Parallel mode**) · `--local` (optional, **the default** — kept as explicit flag for symmetry) · `--decisions a,b,c` / `--use-recommendations` (optional, mutually exclusive — resolve the spec's `## Decisions` section; see step 1.6; `--decisions` is rejected with `--parallel`).
 
 ## Decide, don't prompt — clear-cut points get a default (all modes)
 
-**At any decision point that is unambiguous or indifferent, decide with a sensible default and proceed — never stop with an `AskUserQuestion` menu for it.** Stop only for *genuine* ambiguity: a choice where a wrong pick has real, non-obvious consequences and no default is clearly right. This is unconditional default behavior across **every** mode (`--local`, `--parallel`, `--spawn`) — not a flag, not a mode.
+**At any decision point that is unambiguous or indifferent, decide with a sensible default and proceed — never stop with an `AskUserQuestion` menu for it.** Stop only for *genuine* ambiguity: a choice where a wrong pick has real, non-obvious consequences and no default is clearly right. This is unconditional default behavior across **every** mode (`--local`, `--parallel`) — not a flag, not a mode.
 
 Three things still stop on purpose — they are neither clear-cut nor indifferent:
 
@@ -27,117 +22,40 @@ Everything else — reference-fork with nothing to fork, sub-item strategy when 
 
 ## What it does
 
-**Default (`/ticket-flow:flow <id>`)** — *now equivalent to --local*: all three phases run sequentially in this session with user checkpoints between phases.
+**Default (`/ticket-flow:flow <id>`)** — *equivalent to --local*: all three phases run sequentially in this session with user checkpoints between phases.
 
-**Parallel (`/ticket-flow:flow --parallel [<id>…]`)** — opt-in: works **multiple independent tickets at once**. This session is the controller; it dispatches one worktree-isolated subagent per ticket (`Agent` tool, `isolation: worktree`), collects the results, and merges them strictly sequentially. No id → the whole ready queue. See **## Parallel mode** below. This is the native replacement for `--spawn` (`ticket-flow-x71`); `--spawn` stays as a fallback until `--parallel` is proven.
-
-**Spawn (`/ticket-flow:flow <id> --spawn`)** — opt-in: pickup runs here (seconds). Then a new Ghostty tab spawns inside the worktree with its own Claude instance, which runs `Skill(ticket-flow:implement)` and on success automatically triggers `Skill(ticket-flow:finish)`. **Broken on Ghostty 1.3.1** — falls back to --local with a warning.
+**Parallel (`/ticket-flow:flow --parallel [<id>…]`)** — opt-in: works **multiple independent tickets at once**. This session is the controller; it dispatches one worktree-isolated subagent per ticket (`Agent` tool, `isolation: worktree`), collects the results, and merges them strictly sequentially. No id → the whole ready queue. See **## Parallel mode** below.
 
 ```
 DEFAULT (--local):
 /ticket-flow:pickup <id>  →  CHECKPOINT  →  /ticket-flow:implement  →  CHECKPOINT  →  /ticket-flow:finish
-
-SPAWN (--spawn, when Ghostty 1.3.0 / future fixed version):
-/ticket-flow:pickup <id>  →  spawn-ghostty.sh  →  [tab runs autonomously]
-                                           └─ /ticket-flow:implement → if ok → /ticket-flow:finish
 ```
 
 For fine-grained control: invoke `/ticket-flow:pickup`, `/ticket-flow:implement`, `/ticket-flow:finish` directly.
 
-## Prerequisites (for --spawn mode only)
-
-- **Ghostty 1.3.0** (not 1.3.1) must be installed — `ticket-flow-k9h` tracks the 1.3.1 regression; until upstream fixes, --spawn auto-falls-back to --local
-- **Claude Code must run INSIDE Ghostty** (`$TERM_PROGRAM == "ghostty"`). `spawn-ghostty.sh` checks this before anything else and exits with a clear error when /flow is invoked from iTerm/Terminal.app/etc.
-- **AppleScript permission** for the terminal app (or Claude Code) that invokes `/flow` so it can drive Ghostty. The first invocation triggers a macOS dialog → click OK once. If denied: System Settings → Privacy & Security → Automation → Terminal/Claude Code → enable Ghostty.
-
-If Ghostty is missing, the terminal check fails, or permission is denied, or the 1.3.1 regression bites: `--spawn` reports a clear error and falls back to --local automatically.
-
 ## Steps
-
-### 0. Cleanup subcommand (when first arg = `cleanup`)
-
-If `$1 == "cleanup"`: no pickup, no spawn. Directly invoke `flow-cleanup.sh` with the remaining args and report the result.
-
-```bash
-if [[ "${1:-}" == "cleanup" ]]; then
-  shift
-  CLEAN_ARGS=()
-  for arg in "$@"; do
-    case "$arg" in
-      --stale|--dry-run) CLEAN_ARGS+=("$arg") ;;
-      *) CLEAN_ARGS+=("--id" "$arg") ;;   # bare arg → kanban id
-    esac
-  done
-  "${CLAUDE_PLUGIN_ROOT}/skills/flow/flow-cleanup.sh" "${CLEAN_ARGS[@]}"
-  exit $?
-fi
-```
-
-Examples:
-- `/ticket-flow:flow cleanup` — remove all `done`, report `error`, leave `running` with a live tab untouched
-- `/ticket-flow:flow cleanup 96` — only #96
-- `/ticket-flow:flow cleanup --stale` — additionally sweep stale-running entries (tab gone)
-- `/ticket-flow:flow cleanup --dry-run` — list only, no action
-
-### 0.5. Capture spawning tab id (--spawn mode only, #9s3)
-
-Capture the id of the currently-selected Ghostty tab — the tab that *invoked* /flow. This must run as the **very first step**, before pickup (which can take seconds) and before the user might click another tab. Pass it later to `spawn-ghostty.sh` so the new spawn tab lands directly behind the spawning tab regardless of where the user clicked in the meantime.
-
-Best-effort: AppleScript denied, not running in Ghostty, or no front window → empty value, fallback to old behavior (no positioning hint).
-
-```bash
-SPAWNING_TAB_ID=""
-if (( USE_SPAWN == 1 )) && [[ "${TERM_PROGRAM:-}" == "ghostty" ]]; then
-  SPAWNING_TAB_ID="$(osascript -e 'tell application "Ghostty" to id of selected tab of front window' 2>/dev/null || true)"
-  SPAWNING_TAB_ID="${SPAWNING_TAB_ID//$'\n'/}"
-fi
-```
-
-Skip silently in --local (the new default) — no spawn anyway.
 
 ### 1. Parse args
 
 - `<kanban-id>` (required) — e.g. `96`
 - `<branch-suffix>` (optional) — e.g. `mainsline`
-- `--local` flag (optional, position-independent) — the **default since 2026-05-18**; kept as explicit flag for clarity
-- `--spawn` flag (optional, position-independent) — opt-in for Ghostty-tab spawn mode (currently broken on Ghostty 1.3.1, falls back to --local with warning)
+- `--local` flag (optional, position-independent) — the **default**; kept as explicit flag for clarity
 
 ```bash
-# Parse the run-mode args via the pure helper (`cleanup` is handled in step 0
-# and never reaches here). parse-flow-args.sh is unit-tested by
-# tests/test_flow-parallel.sh; it sets MODE (local|spawn|parallel), ID, SUFFIX,
-# PARALLEL_IDS (array — empty in parallel mode = whole ready queue), USE_SPAWN,
-# LOCAL, USE_RECS, DECISIONS — or exits non-zero with an `ERROR:` on stderr.
+# Parse the run-mode args via the pure helper. parse-flow-args.sh is
+# unit-tested by tests/test_flow-parallel.sh; it sets MODE (local|parallel),
+# ID, SUFFIX, PARALLEL_IDS (array — empty in parallel mode = whole ready
+# queue), LOCAL, USE_RECS, DECISIONS — or exits non-zero with an `ERROR:` on
+# stderr.
 PARSED="$("${CLAUDE_PLUGIN_ROOT}/skills/flow/parse-flow-args.sh" "$@")" || exit 1
 eval "$PARSED"
-
-# --spawn auto-fallback on known-broken Ghostty versions
-if [[ "$MODE" == "spawn" ]]; then
-  GHOSTTY_VER="$(defaults read /Applications/Ghostty.app/Contents/Info.plist CFBundleShortVersionString 2>/dev/null || echo unknown)"
-  if [[ "$GHOSTTY_VER" == "1.3.1" ]]; then
-    echo "⚠ Ghostty 1.3.1 has an AppleScript regression (ticket-flow-k9h) — falling back to --local" >&2
-    MODE="local"; USE_SPAWN=0; LOCAL=1
-  fi
-fi
 ```
 
 ### 1.7. Route: parallel mode
 
-**If `MODE` is `parallel`** → steps 1.5–7 below do not apply (they are the single-ticket path). Jump to **## Parallel mode (`--parallel`)** at the end of this skill. Step 0 (`cleanup`) is still handled above as normal.
+**If `MODE` is `parallel`** → steps 1.6–7 below do not apply (they are the single-ticket path). Jump to **## Parallel mode (`--parallel`)** at the end of this skill.
 
-### 1.5. Pre-spawn cleanup (--spawn mode only)
-
-BEFORE pickup: invoke `flow-cleanup.sh` once (no args) in the main repo. Cleans up finished predecessor tabs (`status: done`) — worktree, branch, status file are removed, the associated Ghostty tab is closed via AppleScript (`close terminal id "<UUID>"` bypasses `confirm-close-surface`).
-
-```bash
-"${CLAUDE_PLUGIN_ROOT}/skills/flow/flow-cleanup.sh"
-```
-
-Cleanup is non-fatal: even when there's nothing to clean (fresh start) or individual items are "unmerged" / "error", the skill runs through and reports. Output is shown to the user, then on to pickup.
-
-Skip in --local (the default): classic mode doesn't clean anything (no spawn → no tab leftovers).
-
-### 1.6. Decision gate (spawn + `--local`)
+### 1.6. Decision gate
 
 Before pickup, check whether the item's spec still has design decisions that need a human pick.
 
@@ -168,7 +86,7 @@ Invoke `Skill(ticket-flow:pickup)` with `<kanban-id>` + optional `<branch-suffix
 
 On error (DoR not met, item not in Backlog, etc.): abort + report. The user can fix the issue and re-run `/flow`.
 
-Pickup returns the worktree path — keep it in `$WORKTREE` for step 3.
+Pickup returns the worktree path — keep it in `$WORKTREE`.
 
 ### 2.5. Record resolved decisions (after pickup)
 
@@ -192,52 +110,9 @@ cd "$WORKTREE" && git add docs/specs/<id>-<slug>.md \
   && git commit -m "spec: #<id> — lock decisions (D1–D<n>) via /flow"
 ```
 
-The spawned (or `--local`) `/ticket-flow:implement` then reads a spec whose decisions are already locked — no flag needs to cross the spawn boundary.
+`/ticket-flow:implement` then reads a spec whose decisions are already locked.
 
-### 3. Branching: --local (default) or --spawn
-
-**If `--local` (default) or --spawn auto-fell-back** → continue with step 4 (classic per-phase-checkpoint flow).
-
-**If `--spawn` is set AND not auto-fell-back**:
-
-```bash
-TAB_UUID="$("${CLAUDE_PLUGIN_ROOT}/skills/flow/spawn-ghostty.sh" "$WORKTREE" "$ID" "$SPAWNING_TAB_ID")"
-SPAWN_EXIT=$?
-```
-
-- If `SPAWN_EXIT != 0` (Ghostty missing, terminal check failed, permission denied, etc.): output:
-
-  ```
-  ❌ Ghostty spawn failed: <stderr>
-
-  Options:
-  - If the error says "requires Ghostty (detected: <other>)": run Claude Code inside Ghostty, OR use `/ticket-flow:flow <id> --local` for classic flow in the current terminal
-  - Install Ghostty: `brew install --cask ghostty`
-  - Check AppleScript permission in System Settings → Privacy & Security → Automation
-  - Or use `/ticket-flow:flow <id> --local` for classic flow in this session
-  ```
-
-  Stop, NO spawn retry, NO automatic fallback to --local (the user should decide explicitly).
-
-- On success: output:
-
-  ```
-  ✓ /ticket-flow:pickup for #<id> complete
-    Branch: <branch>
-    Worktree: <path>
-
-  ✓ Impl session started in Ghostty tab (UUID: <tab-uuid>)
-    Tab title: "🟡 #<id> <short-name>" (running) → 🟢 done / 🔴 error
-    Auto flow: Skill(ticket-flow:implement) → on success auto Skill(ticket-flow:finish)
-    Notification on completion (Glass/Basso)
-    Status file: .claude/impl-status/<id>.json
-
-  → This session is free for more items, /ticket-flow:spec, chat.
-  ```
-
-  **/ticket-flow:flow in default mode ends here.** Do not wait for the tab to finish.
-
-### 4. Classic flow phase 2: implement (only when --local)
+### 4. Phase 2: implement
 
 Checkpoint output:
 ```
@@ -256,7 +131,7 @@ Wait for user decision. On OK: `Skill(ticket-flow:implement)`.
 
 On implement failure: stop, inform the user.
 
-### 5. Classic flow checkpoint after implement (only when --local)
+### 5. Checkpoint after implement
 
 ```
 ✓ /ticket-flow:implement for #<id> complete
@@ -270,11 +145,11 @@ Ready for /ticket-flow:finish?
 [ ] Stop — I'll run the manual test first
 ```
 
-### 6. Classic flow phase 3: finish (only when --local)
+### 6. Phase 3: finish
 
 On OK: `Skill(ticket-flow:finish)`. On failure: stop, inform the user. No auto rollback.
 
-### 7. Final report (only when --local)
+### 7. Final report
 
 In **Mode A** (`mode=beads`), after `/finish` closes the bd state, build the report from bd — there is no KANBAN.md in beads mode:
 
@@ -303,11 +178,9 @@ In **Mode B** (`mode=kanban`) the original KANBAN.md → Testing wording is corr
 
 ## Parallel mode (`--parallel`)
 
-`--parallel` works **multiple independent tickets at once** — one worktree-isolated subagent per ticket, dispatched from this (the controller) session. Opt-in; the default and `--spawn` are unaffected.
+`--parallel` works **multiple independent tickets at once** — one worktree-isolated subagent per ticket, dispatched from this (the controller) session. Opt-in; the default is unaffected.
 
-This is the native replacement for the Ghostty `--spawn` mode (`ticket-flow-x71`). **Staged rollout:** Stage 1 ships `--parallel`; the `--spawn` machinery stays in place as a fallback until `--parallel` is proven on real tickets, then it gets retired (Stage 2).
-
-**Why a controller + subagents, not N spawned sessions:** the `Agent` tool's `isolation: "worktree"` gives each subagent a real, locked git worktree (`.claude/worktrees/agent-<hash>`, branch `worktree-agent-<hash>`, forked from `main`'s current tip, sharing the object store). One controller session coordinates — far cheaper than N full Ghostty sessions, and the controller serializes the merges so they never race.
+**Why a controller + subagents:** the `Agent` tool's `isolation: "worktree"` gives each subagent a real, locked git worktree (`.claude/worktrees/agent-<hash>`, branch `worktree-agent-<hash>`, forked from `main`'s current tip, sharing the object store). One controller session coordinates, and the controller serializes the merges so they never race.
 
 ### P1. Resolve the ticket set
 
@@ -377,15 +250,14 @@ For each ticket whose subagent succeeded, **one at a time** — never two at onc
 
 ### P7. Final report
 
-One consolidated report — per ticket: Done / Testing (+ residual pointer) / merge-conflict / blocked. Network ops stay out: `--parallel` leaves commits local like the other modes; the user runs `/ticket-flow:push` from this session afterwards.
+One consolidated report — per ticket: Done / Testing (+ residual pointer) / merge-conflict / blocked. Network ops stay out: `--parallel` leaves commits local like the default mode; the user runs `/ticket-flow:push` from this session afterwards.
 
 ## What it doesn't do
 
 - Implementation logic — fully delegates to the phase skills
 - Verifying the "Done" status — that stays manual (real test)
 - Conflict resolution — on a merge conflict, the user takes over
-- Tab tracking after spawn — the status file is the only persistence; tab lifecycle is Ghostty's problem
-- **Network ops** (`git push`, `gh repo create`) — these happen in the main session via `/ticket-flow:push` / `/ticket-flow:publish`. Spawn tabs deliberately leave commits local because auth prompts hang silently. After a `/ticket-flow:flow` chain finishes, user runs `/ticket-flow:push` to upload.
+- **Network ops** (`git push`, `gh repo create`) — these happen via `/ticket-flow:push` / `/ticket-flow:publish`. After a `/ticket-flow:flow` chain finishes, the user runs `/ticket-flow:push` to upload.
 
 ---
 
@@ -394,7 +266,5 @@ For reference / troubleshooting (read on demand only):
 - **Behavior on interruption** (stateless flow + recovery hints)
 - **Tradeoff: auto-finish without user checkpoint** (rationale for `--local` opt-in)
 - **When NOT to use /ticket-flow:flow** (anti-patterns)
-- **Tab title as visual status** (OSC-2 escape, emoji choice, `flow-wrap.sh` details)
-- **Troubleshooting** (AppleScript permission, Ghostty version, focus-steal, slow shell-init)
 
 → See [`reference.md`](reference.md) in this skill folder.

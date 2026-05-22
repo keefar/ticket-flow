@@ -1,6 +1,6 @@
 ---
 name: status
-description: Diagnose ticket-flow project state and recommend the next action. Inspects filesystem scaffolding, mode (beads-first vs kanban-primary), memory hygiene (anti-MEMORY clause), in-flight worktrees/spawns, beads counts, and uncommitted changes. Invoke as `/ticket-flow:status`.
+description: Diagnose ticket-flow project state and recommend the next action. Inspects filesystem scaffolding, mode (the .ticket-flow flag), memory hygiene (anti-MEMORY clause), in-flight worktrees, beads counts, and uncommitted changes. Invoke as `/ticket-flow:status`.
 ---
 
 # /ticket-flow:status — Project diagnostic + recommendation
@@ -20,10 +20,10 @@ Single block of structured text:
 ```
 ticket-flow @ <cwd>  (branch: <git-branch>)
 
-PROJECT MODE:        A — beads-first  |  B — kanban-primary  |  none (no scaffolding)
+PROJECT MODE:        beads  |  kanban  |  none   (from the .ticket-flow flag)
 SCAFFOLDING:         git · KANBAN.md · SPEC-TEMPLATE.md · CLAUDE.md · AGENTS.md  (✓ present / ✗ missing)
 MEMORY HYGIENE:      ✓ clean  |  ⚠ anti-MEMORY clause in <files>
-IN-FLIGHT:           N worktrees, M impl-status files (Z stale)
+IN-FLIGHT:           N worktree(s) under .claude/worktrees
 BEADS:               <total> total · <open> open · <blocked> blocked · <ready> ready · <in_progress> in_progress
 UNCOMMITTED:         clean  |  N files
 
@@ -51,7 +51,7 @@ The script ranks recommendations in this priority order:
 1. **Critical hygiene** — missing git repo, missing scaffolding → run `/ticket-flow:init` (or `git init` first)
 2. **Memory contamination** — anti-MEMORY clause present → run `/ticket-flow:bd-detox`
 3. **Dirty working tree** — uncommitted changes → `git status --short` then commit/stash
-4. **Stale in-flight** — orphaned `.claude/impl-status/*.json` entries → `/ticket-flow:flow cleanup --stale`
+4. **In-flight worktrees** — worktrees under `.claude/worktrees/` → `git worktree list` to review; remove stale ones (a `--parallel` run that errored can leave them) with `git worktree remove`
 5. **Active in-progress beads** — `bd list --status=in_progress` items not done → continue with `/ticket-flow:implement` or `/ticket-flow:finish` in the existing worktree
 6. **Ready work** — `bd ready` count > 0 → pick a bead, `/ticket-flow:flow <id>`
 7. **Nothing pressing** — project is at rest

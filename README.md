@@ -7,7 +7,7 @@ Kanban + git-worktree based ticket workflow for Claude Code. A spec → pickup �
 - `/ticket-flow:pickup <id>` — phase 1: validate Definition of Ready, create worktree, branch-lock, item → In Progress
 - `/ticket-flow:implement` — phase 2: execute the plan inside the worktree
 - `/ticket-flow:finish` — phase 3: verify, optional deploy, merge to main, item → Testing
-- `/ticket-flow:flow <id>` — orchestrator: `--local` (default — all phases in this session with checkpoints), `--parallel` (work multiple ready tickets at once via worktree-isolated subagents), `--spawn` (opt-in — spawn the pipeline in a new Ghostty tab)
+- `/ticket-flow:flow <id>` — orchestrator: `--local` (default — all phases in this session with checkpoints) or `--parallel` (work multiple ready tickets at once via worktree-isolated subagents)
 - `/ticket-flow:kanban` — board maintenance
 - `/ticket-flow:board` — generate a read-only `KANBAN.md` snapshot from bd state (beads mode)
 
@@ -68,9 +68,8 @@ Restart Claude Code after editing settings. The skills are then available in eve
 
 - the **feature-dev** plugin — `/ticket-flow:spec --auto` uses its `code-explorer` / `code-architect` agents to ground specs in the codebase; without it, `/spec --auto` falls back to a direct read of the obvious files.
 - **`beads-ui`** — `npx beads-ui start` for a live web board (beads mode)
-- **macOS + Ghostty 1.3+** (`brew install --cask ghostty`) — only for the opt-in `/ticket-flow:flow --spawn` mode
 
-The default `--local` and the `--parallel` modes need none of the macOS/Ghostty stack and run everywhere. `--spawn` is the only mode that needs it — and it is currently broken on Ghostty 1.3.1 (`ticket-flow-k9h`), auto-falling-back to `--local`.
+ticket-flow needs no macOS-specific tooling — `--local` and `--parallel` run anywhere git does.
 
 ## Project requirements
 
@@ -85,7 +84,6 @@ The plugin operates on these conventions in each project (all scaffolded by `/ti
 | `docs/specs/<id>-<slug>.md` | Generated item specs |
 | `docs/superpowers/plans/` | Implementation plans (optional, referenced by `/pickup`) |
 | `.claude/worktrees/` | Worktree directory (auto-created) |
-| `.claude/impl-status/` | `--spawn`-mode status files (auto-created) |
 
 Quick scaffold for a new project — in Claude Code, from the project root:
 
@@ -96,12 +94,6 @@ Quick scaffold for a new project — in Claude Code, from the project root:
 
 Branch naming: `worktree-<id>-<slug>` (from EnterWorktree) or `<tag>/<id>-<slug>` (manual fallback).
 
-## First run (`--spawn` mode only)
-
-The first `/ticket-flow:flow <id> --spawn` triggers a macOS permission dialog (System Events → control Ghostty). Click OK once. The default `--local` and `--parallel` modes trigger no dialog.
-
-If you accidentally clicked "Don't Allow": System Settings → Privacy & Security → Automation → enabling app (Terminal/Ghostty/Claude Code) → check Ghostty.
-
 ## Update workflow
 
 The plugin is a directory-source plugin — edits to `skills/**/SKILL.md` take effect immediately in open sessions, no reinstall. A new or renamed skill needs a `/plugin` reload or session restart.
@@ -109,12 +101,10 @@ The plugin is a directory-source plugin — edits to `skills/**/SKILL.md` take e
 Tests (the `flow` skill carries them; `kanban` has a couple too):
 
 ```bash
-cd ~/.claude/local-plugins/ticket-flow/skills/flow
-bash tests/test_flow-wrap.sh
-bash tests/test_flow-cleanup.sh
-bash tests/test_format-tab-title.sh
-bash tests/test_ghostty-osascript.sh
-bash tests/test_flow-parallel.sh
+cd ~/.claude/local-plugins/ticket-flow
+bash skills/flow/tests/test_flow-parallel.sh
+bash skills/kanban/tests/test_bd-helper-roundtrip.sh
+bash skills/kanban/tests/test_intake-pull.sh
 ```
 
 Helper scripts resolve their own directory via `$(dirname "$0")` — no hardcoded paths.

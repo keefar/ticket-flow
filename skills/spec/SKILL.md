@@ -1,58 +1,17 @@
 ---
 name: spec
-description: Create a Spec doc for a KANBAN item from SPEC-TEMPLATE.md. Interactive mode sets the Kanban note to `spec: drafting`; `--auto` drafts the whole spec non-interactively and sets `spec: review`; `--spawn` runs the interactive dialogue in a fresh Ghostty tab so the main session stays free. Invoke as `/ticket-flow:spec <kanban-id>`, `/ticket-flow:spec <kanban-id> <author>` (default author=chris), `/ticket-flow:spec <kanban-id> --auto`, or `/ticket-flow:spec <kanban-id> --spawn`.
+description: Create a Spec doc for a KANBAN item from SPEC-TEMPLATE.md. Interactive mode sets the Kanban note to `spec: drafting`; `--auto` drafts the whole spec non-interactively and sets `spec: review`. Invoke as `/ticket-flow:spec <kanban-id>`, `/ticket-flow:spec <kanban-id> <author>` (default author=chris), or `/ticket-flow:spec <kanban-id> --auto`.
 ---
 
 # /ticket-flow:spec — Create item spec from template
 
-**Args**: `<kanban-id>` (required, numeric) · `<author>` (optional, default `chris`) · `--auto` (optional, position-independent — non-interactive full draft) · `--spawn` (optional, position-independent — run the interactive dialogue in a spawned Ghostty tab; mutually exclusive with `--auto`)
+**Args**: `<kanban-id>` (required, numeric) · `<author>` (optional, default `chris`) · `--auto` (optional, position-independent — non-interactive full draft)
 
 Examples:
 - `/ticket-flow:spec 94` → drafting author = chris
 - `/ticket-flow:spec 80 agent` → drafting author = agent
 - `/ticket-flow:spec 80a agent` → for split sub-items (letter suffix allowed)
 - `/ticket-flow:spec 94 --auto` → full autonomous draft, no questions, Kanban note → `spec: review`
-- `/ticket-flow:spec 94 --spawn` → opens a new Ghostty tab with an interactive Claude session driving `/ticket-flow:spec 94` there; main session is immediately free for other work
-
-## `--spawn` mode
-
-When the `--spawn` flag is present, the skill does **not** run the dialogue in the current session. Instead it dispatches to `skills/flow/spawn-spec.sh` which mirrors `/flow`'s Ghostty-tab spawn pattern, but:
-
-- Working dir = **main repo** (not a worktree — spec drafting happens on `main`)
-- Wrap script = `skills/flow/spec-wrap.sh` (lighter than `flow-wrap.sh`: static `📝 #<id> spec` title, no status file, no implement/finish chain)
-- Injection = `Skill(spec) <id> [<author>] [--auto]` typed into the new tab after the wrap starts claude
-
-Prerequisites: Ghostty **1.3.0** (not 1.3.1 — `ticket-flow-k9h`), `$TERM_PROGRAM == "ghostty"`, AppleScript permission.
-
-**Auto-fallback on Ghostty 1.3.1**: before dispatching, check the installed Ghostty version. If 1.3.1, warn and fall back to in-session mode (no spawn):
-
-```bash
-GHOSTTY_VER="$(defaults read /Applications/Ghostty.app/Contents/Info.plist CFBundleShortVersionString 2>/dev/null || echo unknown)"
-if [[ "$GHOSTTY_VER" == "1.3.1" ]]; then
-  echo "⚠ Ghostty 1.3.1 has an AppleScript regression (ticket-flow-k9h) — falling back to in-session /spec" >&2
-  USE_SPAWN=0
-fi
-```
-
-Other failures (no Ghostty, no AS permission) also surface as a clear error with a hint to drop `--spawn` for the in-session fallback.
-
-Step-by-step (only when `--spawn` is set):
-
-```bash
-# 0. Pre-spawn capture of the spawning tab id (same as /flow), so the new tab lands directly behind it.
-SPAWNING_TAB_ID="$(osascript -e 'tell application "Ghostty" to id of selected tab of front window' 2>/dev/null || true)"
-SPAWNING_TAB_ID="${SPAWNING_TAB_ID//$'\n'/}"
-
-# 1. Spawn.
-TAB_UUID="$("${CLAUDE_PLUGIN_ROOT}/skills/flow/spawn-spec.sh" "$ID" ${AUTHOR:+"$AUTHOR"} "$SPAWNING_TAB_ID" ${USE_AUTO:+--auto})"
-
-# 2. Report and exit — do NOT run the in-session steps below.
-echo "✓ /ticket-flow:spec for #$ID dispatched to Ghostty tab (UUID: $TAB_UUID)
-  Tab title: \"📝 #$ID spec\"
-  → This session is free."
-```
-
-`--spawn` + `--auto` is rejected — `--auto` doesn't need a spawn (the autonomous draft is non-interactive, no reason to move it off the main session). If both are passed, abort with an explanatory error.
 
 ## Prerequisites
 
