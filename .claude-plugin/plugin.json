@@ -1,7 +1,7 @@
 {
   "name": "ticket-flow",
-  "description": "Kanban-driven ticket workflow: /spec drafts specs, /pickup creates worktree, /implement executes, /finish merges + deploys, /flow orchestrates the whole loop in Ghostty tabs.",
-  "version": "0.1.0",
+  "description": "Kanban- or beads-backed ticket workflow for Claude Code: /spec → /pickup → /implement → /finish, orchestrated by /flow (--local, --parallel, --spawn), each ticket in its own git worktree.",
+  "version": "0.2.0",
   "author": {
     "name": "Christoph Schmid"
   }
