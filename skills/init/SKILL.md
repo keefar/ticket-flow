@@ -21,6 +21,7 @@ Sets up a project for ticket-flow. The single entry point for both backends — 
 - `docs/superpowers/plans/.gitkeep` — directory for implementation plans (used by `superpowers:writing-plans`)
 - `.claude/worktrees/` — directory where `/ticket-flow:pickup` creates branch worktrees
 - `.ticket-flow` — mode flag (`mode=kanban` or `mode=beads`)
+- `CLAUDE.md` — appends a marked `Ticket-Flow Routing` block (via `skills/init/install-routing-claude-md.sh`) so planning/ideation prompts route through tf instead of `superpowers:brainstorming`, `superpowers:writing-plans`, or `TodoWrite`. CLAUDE.md is "user instructions" — highest priority in the skill-trigger order. Idempotent via the `<!-- ticket-flow:routing -->` marker.
 
 **Kanban-only scaffolding:**
 
@@ -113,6 +114,18 @@ if [[ ! -f "./docs/superpowers/plans/.gitkeep" ]]; then
   CREATED+=("./docs/superpowers/plans/.gitkeep")
 fi
 scaffold_dir  "./.claude/worktrees"
+```
+
+### 1b. CLAUDE.md routing block
+
+Append a marked `Ticket-Flow Routing` block to `./CLAUDE.md` so any planning, ideation, bug, or change-request prompt routes through tf (`bd create` + `/ticket-flow:spec`) instead of falling back to `superpowers:brainstorming`, `superpowers:writing-plans`, or `TodoWrite`. Runs for both modes. Delegates to `skills/init/install-routing-claude-md.sh`; idempotent via the `<!-- ticket-flow:routing -->` marker.
+
+```bash
+case "$("$PLUGIN/skills/init/install-routing-claude-md.sh")" in
+  created)  CREATED+=("CLAUDE.md (with Ticket-Flow Routing block)") ;;
+  appended) CREATED+=("CLAUDE.md (Ticket-Flow Routing block appended)") ;;
+  no-op) ;;  # marker already present — silent
+esac
 ```
 
 ### 2a. Kanban path
@@ -220,6 +233,7 @@ Kanban mode:
   [created] docs/specs/SPEC-TEMPLATE.md
   [created] docs/superpowers/plans/
   [exists, skipped] .claude/worktrees/
+  [created] CLAUDE.md (with Ticket-Flow Routing block)
 
 Mode: kanban — KANBAN.md is the source of truth.
 To switch to beads mode later: re-run /ticket-flow:init --mode=beads (migrates + flips the flag).
@@ -238,6 +252,7 @@ Beads mode (fresh):
   [created] .beads/ (bd init …)
   [created] docs/specs/SPEC-TEMPLATE.md
   [created] docs/superpowers/plans/
+  [created] CLAUDE.md (with Ticket-Flow Routing block)
 
 bd initialized with tf custom template — Auto-Memory + bd remember coexist.
 (Or, with --skip-agents: no AGENTS.md, no BEADS INTEGRATION block in CLAUDE.md.
@@ -257,6 +272,7 @@ Beads mode (migration from kanban):
   [renamed] KANBAN.md → KANBAN.archived.md
   [created] .ticket-flow (mode=beads)
   [created] .beads/
+  [created] CLAUDE.md (Ticket-Flow Routing block appended)
 
 Use /ticket-flow:board to regenerate a static KANBAN.md snapshot from bd on demand.
 ```
@@ -272,6 +288,7 @@ Use /ticket-flow:board to regenerate a static KANBAN.md snapshot from bd on dema
 - **Plugin root not resolvable**: `${CLAUDE_PLUGIN_ROOT}` is set by Claude Code when the skill is loaded. The `${VAR:?}` guard fails fast with an explanatory message if it isn't set.
 - **Custom template missing (beads mode, no `--skip-agents`)**: warn and fall back to vanilla `bd init`. User can run `/ticket-flow:bd-detox` afterward to clean up the anti-MEMORY clause.
 - **`.claude/rules/beads-workflow.md` references `.worktrees/`** (beads mode): init patches every standalone occurrence to `.claude/worktrees/` so `bd worktree create` and `/ticket-flow:pickup` end up in the same directory. Embedded paths like `/some/other/.worktrees/foo` (preceded by `/` or an alphanumeric) are left untouched. Idempotent — no change if the file is missing or already on the tf convention.
+- **Existing `CLAUDE.md` without the routing marker** (both modes): init appends the `Ticket-Flow Routing` block at the end, preserving existing content. Existing CLAUDE.md with the `<!-- ticket-flow:routing -->` marker → no-op. If the user later edits the block, the marker keeps re-runs idempotent — manually drop the marker line to force a re-append on next init.
 
 ## What it doesn't do
 
