@@ -6,3 +6,13 @@
 
 # macOS
 .DS_Store
+
+# Internal dogfooding artifacts — NOT shipped in the public plugin source.
+# Files live locally for the project's own ticket workflow but are not part of
+# the plugin code consumers install. See ticket-flow-e67 (history cleanup).
+KANBAN.md
+KANBAN-done.md
+docs/
+CLAUDE.md
+.beads/
+.claude/settings.json
