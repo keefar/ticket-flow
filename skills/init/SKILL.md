@@ -30,6 +30,7 @@ Sets up a project for ticket-flow. The single entry point for both backends — 
 
 - `.beads/` — bd's Dolt database, created by `bd init --agents-template <tf custom template>`. The custom template drops vanilla `bd init`'s anti-MEMORY.md clause so Claude Code's Auto-Memory keeps working alongside `bd remember`. With `--skip-agents`, no AGENTS.md is written and the `BEADS INTEGRATION` block is skipped from CLAUDE.md too.
 - If an existing `KANBAN.md` with items is present, every row is imported into bd via `skills/kanban/kanban-import.sh`, then the file is archived to `KANBAN.archived.md`. The archived board can be regenerated on demand from bd state with `/ticket-flow:board` — it is no longer a workflow input.
+- If `.claude/rules/beads-workflow.md` exists and references the stock `.worktrees/` convention, init patches every standalone occurrence to `.claude/worktrees/` (via `skills/init/unify-worktree-path.sh`). This eliminates the dualism where `bd worktree create` and `/ticket-flow:pickup` would otherwise write to different directories. Idempotent.
 
 **Idempotent same-mode re-runs**: re-running with the same mode is a no-op — existing scaffold files and the `.ticket-flow` flag are kept. Only missing scaffold targets get added.
 
@@ -199,6 +200,15 @@ fi
 
 The archived board can be regenerated on demand from bd state with `/ticket-flow:board`.
 
+**Unify worktree convention** — bd has no hard default for `bd worktree create`; the `.worktrees/` location is just a convention documented in stock beads rules files. tf's convention is `.claude/worktrees/`. To prevent a dualism where manual `bd worktree create` and `/ticket-flow:pickup` write to different directories, init delegates to `skills/init/unify-worktree-path.sh` to patch every standalone `.worktrees/` reference in `.claude/rules/beads-workflow.md`. The helper is idempotent — repeat runs on already-patched (or absent) files are no-ops.
+
+```bash
+case "$("$PLUGIN/skills/init/unify-worktree-path.sh" "$ROOT")" in
+  patched) CREATED+=(".claude/rules/beads-workflow.md (patched: .worktrees/ → .claude/worktrees/)") ;;
+  no-op|no-file) ;;  # nothing to change or file absent — silent
+esac
+```
+
 ## Report
 
 Kanban mode:
@@ -261,6 +271,7 @@ Use /ticket-flow:board to regenerate a static KANBAN.md snapshot from bd on dema
 - **Cwd is not project root**: init runs in cwd unconditionally. Caller is responsible for `cd` into the right directory first.
 - **Plugin root not resolvable**: `${CLAUDE_PLUGIN_ROOT}` is set by Claude Code when the skill is loaded. The `${VAR:?}` guard fails fast with an explanatory message if it isn't set.
 - **Custom template missing (beads mode, no `--skip-agents`)**: warn and fall back to vanilla `bd init`. User can run `/ticket-flow:bd-detox` afterward to clean up the anti-MEMORY clause.
+- **`.claude/rules/beads-workflow.md` references `.worktrees/`** (beads mode): init patches every standalone occurrence to `.claude/worktrees/` so `bd worktree create` and `/ticket-flow:pickup` end up in the same directory. Embedded paths like `/some/other/.worktrees/foo` (preceded by `/` or an alphanumeric) are left untouched. Idempotent — no change if the file is missing or already on the tf convention.
 
 ## What it doesn't do
 
