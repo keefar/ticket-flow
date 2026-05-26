@@ -33,14 +33,14 @@ ticket-flow runs in one of two modes, recorded in a `.ticket-flow` file at the p
 
 ### Local development
 
-Drop the repo into `~/.claude/local-plugins/ticket-flow/`, then add to `~/.claude/settings.json`:
+Drop the repo into `~/_Code/claude/plugins/ticket-flow/` (or any directory of your choosing), then add to `~/.claude/settings.json`:
 
 ```json
 {
   "extraKnownMarketplaces": {
     "ticket-flow-local": {
       "source": "directory",
-      "path": "~/.claude/local-plugins"
+      "path": "~/_Code/claude/plugins"
     }
   },
   "enabledPlugins": {
@@ -102,7 +102,7 @@ The plugin is a directory-source plugin — edits to `skills/**/SKILL.md` take e
 Tests (the `flow` skill carries them; `kanban` has a couple too):
 
 ```bash
-cd ~/.claude/local-plugins/ticket-flow
+cd ~/_Code/claude/plugins/ticket-flow
 bash skills/flow/tests/test_flow-parallel.sh
 bash skills/kanban/tests/test_bd-helper-roundtrip.sh
 bash skills/kanban/tests/test_intake-pull.sh

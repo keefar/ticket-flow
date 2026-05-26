@@ -14,7 +14,7 @@
 # Output is shown to Claude as a postToolUse system-reminder.
 #
 # Install:
-#   cp ~/.claude/local-plugins/ticket-flow/hooks/research-first-on-toolerror.sh \
+#   cp ~/_Code/claude/plugins/ticket-flow/hooks/research-first-on-toolerror.sh \
 #      ~/.claude/hooks/research-first-on-toolerror.sh
 #   chmod +x ~/.claude/hooks/research-first-on-toolerror.sh
 #
