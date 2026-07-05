@@ -55,7 +55,18 @@ Before merge:
 
 `/finish` only enforces — it does not auto-generate tests. If the spec says `testable-surface: none`, no check.
 
-**Classify as you go** — for each AC and check, note whether it is now *proven* (typecheck/test green, a command whose success proves the outcome, mechanical correctness) or *residual* (needs human eyes: function, design, preference, subjective quality, environment-specific behavior). This classification drives the gating decision and the verification checklist in step 6.
+**Classify as you go** — for each AC and check, note whether it is now *proven* or *residual*. Default to *proven*; only mark something *residual* when it genuinely needs the user's own senses or presence — touching UI/design is not by itself a reason to mark something residual (User-Anweisung, 2026-07-05):
+
+- **Proven** (agent-verifiable — perform the check now, then close the bd issue in step 6; do not park it in Testing waiting for a sign-off that was never actually required):
+  - typecheck/tests green, a command whose success proves the outcome, mechanical/computational correctness
+  - **UI/design behavior confirmable against an already-decided spec** via browser automation (e.g. `Skill(webapp-testing)` / Playwright screenshot or interaction) — "does this button now use the fixed size from the design decision", "does the collapse toggle fire on click, not drag". Only counts when the target behavior is already pinned down (a prior design decision, an AC, a written pattern) — checking against a still-open taste call does not count, that stays residual.
+  - infra/config-level correctness (network paths, CORS rules, hardcoded values eliminated, security config, deploy status) — even when the user has no practical way to check it themselves. Agent-verifiable and un-checkable-by-the-user is still *proven*, not residual: verify it yourself and close.
+- **Residual** (needs the user — stays in Testing):
+  - anything requiring real audio/acoustic listening or measurement judgment ("does this sound right", audible confirmation on real speakers) — the agent must never self-verify by playing signals at real hardware (Audio-Test-Sicherheit-Hard-Rule)
+  - physical hardware interaction only the user can perform (their Pi, their speakers, their room, their peripherals)
+  - a genuine subjective preference/taste call that is **not yet resolved** by an existing decision (an open design *choice*, not a confirmed one)
+
+This classification drives the gating decision and the verification checklist in step 6.
 
 ### 3. Review (optional, depending on item size)
 
