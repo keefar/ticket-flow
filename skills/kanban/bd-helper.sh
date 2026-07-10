@@ -140,6 +140,17 @@ bd_update_notes_append() {
 #
 # Usage: bd_update_notes_replace_prefix <bd-id> <prefix> <new-full-line>
 # Example: bd_update_notes_replace_prefix ticket-flow-abc "branch:" "branch: worktree-94-foo"
+#
+# Convention for `[Verify]` (dashboard project-hub reads this — beads.py's
+# _verify_snippet() picks the line that STARTS WITH "[Verify]", nothing else):
+#   bd_update_notes_replace_prefix <id> "[Verify]" "[Verify] <concise instruction>"
+# The instruction must be ONE line (no embedded newline other than intentional
+# <br> for multi-step lists), self-contained action + expected result, written
+# so the user never has to open the bead to know what to do. Keep technical
+# implementation detail OUT of this line — it belongs in the surrounding notes.
+# Avoid ASCII quote characters (") inside the instruction text — it is passed
+# through a bash double-quoted argument and an embedded " terminates the
+# string early (syntax error). Rephrase instead of quoting a term.
 bd_update_notes_replace_prefix() {
   local bd_id="$1"
   local prefix="$2"
