@@ -37,6 +37,8 @@ The skill delegates to `skills/bd-detox/bd-detox.sh`. The script:
 5. **Verify** — re-grep both files for the marker strings; if any remain, warn and list them.
 6. **Report** — confirm changes, mention the `bd prime` runtime caveat.
 
+**Skill-side retrofit step (after the script)** — set the beads role: `git config beads.role maintainer`. Newer `/ticket-flow:init` sets this at scaffold time; projects initialized before that print `warning: beads.role not configured (GH#2950)` (two noise lines) on every `bd` call. Setting is idempotent — no need to check first.
+
 ## Idempotency
 
 Re-running on an already-detoxed project is a no-op:

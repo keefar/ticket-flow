@@ -32,6 +32,7 @@ Sets up a project for ticket-flow. The single entry point for both backends — 
 - `.beads/` — bd's Dolt database, created by `bd init --agents-template <tf custom template>`. The custom template drops vanilla `bd init`'s anti-MEMORY.md clause so Claude Code's Auto-Memory keeps working alongside `bd remember`. With `--skip-agents`, no AGENTS.md is written and the `BEADS INTEGRATION` block is skipped from CLAUDE.md too.
 - If an existing `KANBAN.md` with items is present, every row is imported into bd via `skills/kanban/kanban-import.sh`, then the file is archived to `KANBAN.archived.md`. The archived board can be regenerated on demand from bd state with `/ticket-flow:board` — it is no longer a workflow input.
 - If `.claude/rules/beads-workflow.md` exists and references the stock `.worktrees/` convention, init patches every standalone occurrence to `.claude/worktrees/` (via `skills/init/unify-worktree-path.sh`). This eliminates the dualism where `bd worktree create` and `/ticket-flow:pickup` would otherwise write to different directories. Idempotent.
+- `git config beads.role maintainer` — set once so `bd` calls stop printing the `warning: beads.role not configured (GH#2950)` noise.
 
 **Idempotent same-mode re-runs**: re-running with the same mode is a no-op — existing scaffold files and the `.ticket-flow` flag are kept. Only missing scaffold targets get added.
 
@@ -180,6 +181,12 @@ else
 fi
 ```
 
+**Set the beads role** (right after `bd init`) — without it, every subsequent `bd` call prints `warning: beads.role not configured (GH#2950)`: two noise lines per call that cost context and pollute grep/jq parsing in skill scripts. Setting is idempotent:
+
+```bash
+git config beads.role maintainer
+```
+
 **Verify after init**:
 
 - Skip-agents mode → no `AGENTS.md` in cwd; `CLAUDE.md` does not contain a `BEADS INTEGRATION` block.
@@ -250,6 +257,7 @@ Beads mode (fresh):
 ✓ ticket-flow + beads initialized in <cwd>:
   [created] .ticket-flow (mode=beads)
   [created] .beads/ (bd init …)
+  [set] git config beads.role maintainer
   [created] docs/specs/SPEC-TEMPLATE.md
   [created] docs/superpowers/plans/
   [created] CLAUDE.md (with Ticket-Flow Routing block)
