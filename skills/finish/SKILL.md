@@ -78,7 +78,15 @@ Mandatory pre-merge steps, in this order — then the merge:
 
 **5a. EnterWorktree session? Leave it first — the merge runs from the main-repo session.** In an EnterWorktree session *every* write to the main repo's **working tree** fails with `Operation not permitted` (unlink/create) — with sandbox bypass and via python3 subprocess alike. The Step 1 commit-cwd caveat only covers `.git/index.lock`; a merge also writes the main repo's working tree, so `cd <main-repo> && git merge` cannot work from inside the session. Sequence: commit the worktree branch (from the worktree root) → `ExitWorktree` with `action: keep` (Step 7 still needs the worktree for cleanup) → run the merge from the main-repo session.
 
-**5b. Before merging — commit `.beads/` first** (when bd is active): `bd` commands (in pickup, here, or the kanban skill) dirty `.beads/*.jsonl` in the working tree. `git merge` against a dirty `.beads/` either refuses ("Your local changes to the following files would be overwritten by merge") or drags the uncommitted state into the merge commit. Commit `.beads/issues.jsonl` (and `.beads/kanban-bd-mapping.json` if it changed) on the **target branch** *before* `git merge` runs — `git status` should be clean apart from the branch you're about to merge.
+**5b. Verify the commits are on the branch you are about to merge.** Worktree-isolated or dispatched work occasionally lands on the wrong branch — an `isolation: worktree` dispatch that commits straight onto the base branch, or a "cd into the worktree" instruction that silently doesn't hold — and the completion report still reads like success; only this check catches it. Take the sha of the last implementation commit (from the implement report, or `git -C <worktree-path> rev-parse HEAD`) and check:
+
+```bash
+git branch --contains <sha>   # must list <branch> (the worktree branch)
+```
+
+If the expected branch is missing (the commit sits on the wrong branch): `git rebase <target-branch>` run inside the worktree replays the commit onto the right base without losing it — then re-run the check. Do not merge until it passes.
+
+**5c. Before merging — commit `.beads/` first** (when bd is active): `bd` commands (in pickup, here, or the kanban skill) dirty `.beads/*.jsonl` in the working tree. `git merge` against a dirty `.beads/` either refuses ("Your local changes to the following files would be overwritten by merge") or drags the uncommitted state into the merge commit. Commit `.beads/issues.jsonl` (and `.beads/kanban-bd-mapping.json` if it changed) on the **target branch** *before* `git merge` runs — `git status` should be clean apart from the branch you're about to merge.
 
 Skill delegation: `Skill(superpowers:finishing-a-development-branch)` for a clean merge workflow (FF/squash/rebase depending on branch character).
 
