@@ -53,11 +53,11 @@ grep -nE "^\| ${id} \|" KANBAN.md
 
 - Tag must be `bug`, `change`, or `feature`
 - Note must not contain `spec: pending`, `decision: open`, or `blocked by:`
-- For `feature` or larger `change`: the note must contain `[Spec](docs/specs/...)` — otherwise warn but do not abort (user-override possible)
+- For `feature` or larger `change`: the note must contain a `[Spec](…)` link (any path — projects lay specs out differently) — otherwise warn but do not abort (user-override possible)
 
 ### 2.5. Read spec frontmatter (when a spec exists)
 
-Parse the spec's YAML frontmatter (`docs/specs/<id>-<slug>.md`) and capture three optional fields. **Prompt only when there is a genuine choice** — see *Decide, don't prompt* in `skills/flow/SKILL.md`: a menu with one obvious answer (or no answer to make) auto-decides silently.
+Parse the spec's YAML frontmatter — path canonically from the note's `[Spec]` link, convention `docs/specs/<id>-<slug>.md` only as fallback — and capture three optional fields. **Prompt only when there is a genuine choice** — see *Decide, don't prompt* in `skills/flow/SKILL.md`: a menu with one obvious answer (or no answer to make) auto-decides silently.
 
 - **`reference-fork:` (Cherry #7)** — URL or `none`.
   - `none`, empty, or field absent → **nothing to decide. Skip silently** — no menu.

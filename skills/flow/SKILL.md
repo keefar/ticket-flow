@@ -59,9 +59,9 @@ eval "$PARSED"
 
 Before pickup, check whether the item's spec still has design decisions that need a human pick.
 
-1. **Find the spec** — the path is decided by the `.ticket-flow` mode flag:
-   - **Mode A** (`mode=beads`): source `skills/kanban/bd-helper.sh`; `BD_ID="$(bd_id_for "$ID")"`; `SPEC_PATH="$(bd_get_notes "$BD_ID" | grep -oE '\[Spec\]\([^)]+\)' | head -1 | sed 's/^\[Spec\](\(.*\))$/\1/')"`. Fallback to convention `docs/specs/<id>-*.md` (first match) when notes are empty. **Do not read `KANBAN.md`.** No spec found → no gate, continue.
-   - **Mode B** (`mode=kanban`): the `[Spec](docs/specs/<id>-<slug>.md)` link in the `<id>` row's note in KANBAN.md. No spec link → no gate, continue to step 2.
+1. **Find the spec** — the `[Spec]` link in the item's note is the **canonical** source of the spec path (projects lay specs out differently — e.g. superpowers-based projects use `docs/superpowers/specs/<date>-<name>.md`); the convention `docs/specs/<id>-*.md` (first match) is only the last-resort fallback for items without a link. Where the note lives is decided by the `.ticket-flow` mode flag:
+   - **Mode A** (`mode=beads`): source `skills/kanban/bd-helper.sh`; `BD_ID="$(bd_id_for "$ID")"`; `SPEC_PATH="$(bd_get_notes "$BD_ID" | grep -oE '\[Spec\]\([^)]+\)' | head -1 | sed 's/^\[Spec\](\(.*\))$/\1/')"`. Empty → convention fallback. **Do not read `KANBAN.md`.** No spec found → no gate, continue.
+   - **Mode B** (`mode=kanban`): the `[Spec](<spec-path>)` link in the `<id>` row's note in KANBAN.md; same fallback. No spec found → no gate, continue to step 2.
 2. **Read the spec.** Does it have a `## Decisions` section with `### D1…` entries?
    - **No `## Decisions` section** → nothing to resolve, continue to step 2.
    - **`## Decisions` present AND a `## Decision Log` that covers every `D#`** → already resolved (locked via the `/ticket-flow:spec` review step), continue to step 2.
@@ -70,7 +70,7 @@ Before pickup, check whether the item's spec still has design decisions that nee
        ```
        ⏸ /ticket-flow:flow stopped — #<id> has unresolved decisions
 
-       docs/specs/<id>-<slug>.md has an open `## Decisions` section (D1–D<n>)
+       <spec-path> has an open `## Decisions` section (D1–D<n>)
        with no `## Decision Log`. Review the options, then either:
          • lock them via the /ticket-flow:spec review step, or
          • re-run:  /ticket-flow:flow <id> --decisions <a,b,…>   (option per D#)
@@ -92,7 +92,7 @@ Pickup returns the worktree path — keep it in `$WORKTREE`.
 
 Only when step 1.6 resolved decisions via `--decisions` / `--use-recommendations` — otherwise skip.
 
-Append a `## Decision Log` to the **bottom** of the worktree's copy of the spec (`$WORKTREE/docs/specs/<id>-<slug>.md`) — same format the `/ticket-flow:spec` review step uses:
+Append a `## Decision Log` to the **bottom** of the worktree's copy of the spec (`$WORKTREE/<spec-path>` — the path step 1.6 resolved) — same format the `/ticket-flow:spec` review step uses:
 
 ```
 ## Decision Log
@@ -106,7 +106,7 @@ Locked <YYYY-MM-DD> — via /ticket-flow:flow (--decisions … | --use-recommend
 Commit it in the worktree:
 
 ```bash
-cd "$WORKTREE" && git add docs/specs/<id>-<slug>.md \
+cd "$WORKTREE" && git add <spec-path> \
   && git commit -m "spec: #<id> — lock decisions (D1–D<n>) via /flow"
 ```
 

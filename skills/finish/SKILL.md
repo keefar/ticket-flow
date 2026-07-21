@@ -138,7 +138,7 @@ The `git worktree remove` here follows Step 7's verify-then-escalate rule (`git 
 - One line: *what the item is*, plain language.
 - Numbered steps: the **residual** checks only — exclude anything step 2 marked as already proven.
 - Storage:
-  - **Item has a spec doc** → write it as a `## Verification` section in `docs/specs/<id>-<slug>.md` (after Acceptance Criteria). Add a `[Verify](docs/specs/<id>-<slug>.md#verification)` pointer to the KANBAN Testing-row note.
+  - **Item has a spec doc** → write it as a `## Verification` section in the spec doc (after Acceptance Criteria). The spec path comes **canonically from the `[Spec]` link** in the item's note (Step 1) — projects lay specs out differently (e.g. `docs/superpowers/specs/…`); the convention `docs/specs/<id>-<slug>.md` is only the fallback when no link exists. Add a `[Verify](<spec-path>#verification)` pointer to the KANBAN Testing-row note.
   - **Spec-less item** (trivial, inline ACs) → put the (tiny) checklist inline in the KANBAN Testing-row note.
 
 **State update (mode-aware):**
@@ -157,7 +157,8 @@ if [[ -n "$BD_ID" ]]; then
   # Drop the branch-lock line first (set by /pickup) — finish ends worktree life.
   bd_update_notes_remove_prefix "$BD_ID" "branch:"
   # Replace any prior [Verify] pointer (e.g. from an earlier finish attempt).
-  bd_update_notes_replace_prefix "$BD_ID" "[Verify]" "[Verify](docs/specs/<id>-<slug>.md#verification)"
+  # <spec-path> = the path from the note's [Spec] link (see checklist storage above).
+  bd_update_notes_replace_prefix "$BD_ID" "[Verify]" "[Verify](<spec-path>#verification)"
   if [[ "$HAS_RESIDUAL" == "0" ]]; then
     bd close "$BD_ID" --reason="verified by /ticket-flow:finish (no residual)"
   else
