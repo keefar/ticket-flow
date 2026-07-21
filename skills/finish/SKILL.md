@@ -35,7 +35,7 @@ by the `.ticket-flow` mode flag (source `skills/kanban/bd-helper.sh`):
 
 Extract ID, title, tag, spec/plan links from the resolved source.
 
-**Commit-cwd caveat** (same as `/ticket-flow:implement` Step 1): in an EnterWorktree session, git commits to the **main repo** must run as `cd <main-repo> && git ...` in a single statement, and commits to the **worktree branch** must run from the worktree **root** (not a subdir) — otherwise `git` fails with `.git/index.lock: Operation not permitted`. This bites in Step 5 (merge) and Step 6 (KANBAN update).
+**Commit-cwd caveat** (same as `/ticket-flow:implement` Step 1): in an EnterWorktree session, git commits to the **main repo** must run as `cd <main-repo> && git ...` in a single statement, and commits to the **worktree branch** must run from the worktree **root** (not a subdir) — otherwise `git` fails with `.git/index.lock: Operation not permitted`. This bites in Step 6 (KANBAN update). Step 5's merge is stricter still — it cannot run from inside an EnterWorktree session at all (see 5a).
 
 ### 2. Final verification
 
@@ -85,7 +85,32 @@ If there is no deploy skill or the change is documentation-only: skip.
 
 ### 5. Merge to main
 
-**Before merging — commit `.beads/` first** (when bd is active): `bd` commands (in pickup, here, or the kanban skill) dirty `.beads/*.jsonl` in the working tree. `git merge` against a dirty `.beads/` either refuses ("Your local changes to the following files would be overwritten by merge") or drags the uncommitted state into the merge commit. Commit `.beads/issues.jsonl` (and `.beads/kanban-bd-mapping.json` if it changed) on the **target branch** *before* `git merge` runs — `git status` should be clean apart from the branch you're about to merge.
+Mandatory pre-merge steps, in this order — then the merge:
+
+**5a. EnterWorktree session? Leave it first — the merge runs from the main-repo session.** In an EnterWorktree session *every* write to the main repo's **working tree** fails with `Operation not permitted` (unlink/create) — with sandbox bypass and via python3 subprocess alike. The Step 1 commit-cwd caveat only covers `.git/index.lock`; a merge also writes the main repo's working tree, so `cd <main-repo> && git merge` cannot work from inside the session. Sequence: commit the worktree branch (from the worktree root) → `ExitWorktree` with `action: keep` (Step 7 still needs the worktree for cleanup) → run the merge from the main-repo session.
+
+**5b. Verify the commits are on the branch you are about to merge.** Worktree-isolated or dispatched work occasionally lands on the wrong branch — an `isolation: worktree` dispatch that commits straight onto the base branch, or a "cd into the worktree" instruction that silently doesn't hold — and the completion report still reads like success; only this check catches it. Take the sha of the last implementation commit (from the implement report, or `git -C <worktree-path> rev-parse HEAD`) and check:
+
+```bash
+git branch --contains <sha>   # must list <branch> (the worktree branch)
+```
+
+If the expected branch is missing (the commit sits on the wrong branch): `git rebase <target-branch>` run inside the worktree replays the commit onto the right base without losing it — then re-run the check. Do not merge until it passes.
+
+**5c. Commit dirty `.beads/` yourself** (when bd is active): every `bd` call (in pickup, here, or the kanban skill) auto-exports to `.beads/issues.jsonl`/`.beads/interactions.jsonl`, leaving an uncommitted diff in the main repo. `git merge` against a dirty `.beads/` either refuses ("Your local changes to the following files would be overwritten by merge") or drags the uncommitted state into the merge commit. Check and commit it as part of this step, on the **target branch** — never leave it to the user:
+
+```bash
+# Edge case: some projects gitignore .beads/ — then there is nothing to commit.
+if ! git check-ignore -q .beads/issues.jsonl \
+   && [[ -n "$(git status --porcelain -- .beads/)" ]]; then
+  for f in .beads/issues.jsonl .beads/interactions.jsonl .beads/kanban-bd-mapping.json; do
+    [[ -f "$f" ]] && git add "$f"
+  done
+  git commit -m "chore: bd-Export-Sync vor Merge"
+fi
+```
+
+Afterwards `git status` is clean apart from the branch you're about to merge.
 
 Skill delegation: `Skill(superpowers:finishing-a-development-branch)` for a clean merge workflow (FF/squash/rebase depending on branch character).
 
@@ -97,6 +122,8 @@ git commit -F .commit-msg-file
 git worktree remove <worktree-path>
 git branch -d <branch>
 ```
+
+The `git worktree remove` here follows Step 7's verify-then-escalate rule (`git worktree list` after the error, always).
 
 ### 6. Gating, verification checklist + KANBAN.md update
 
@@ -157,18 +184,27 @@ git worktree remove <worktree-path>
 git branch -d <branch>  # local cleanup if the remote is already gone
 ```
 
-**IMPORTANT — the "Operation not permitted" error is usually misleading**: `git worktree remove` frequently prints `Operation not permitted` and exits non-zero, yet **completes the removal anyway**. This is the normal case when the command runs from the **main-repo session** (i.e. after `ExitWorktree` has already left the worktree). Don't treat the error as failure — verify with `git worktree list`:
+**IMPORTANT — the "Operation not permitted" error is ambiguous; never trust it in either direction**: `git worktree remove` often prints `Operation not permitted` and exits non-zero yet **completes the removal anyway** (the common case from the main-repo session) — but real failures with the same message exist too, even from the main session. After *every* such error, `git worktree list` is the source of truth:
 
 ```bash
 git worktree remove <worktree-path>   # may print "Operation not permitted"
 git worktree list                     # ← source of truth: is <worktree-path> still listed?
 ```
 
-- **Path gone from `git worktree list`** → cleanup succeeded despite the error. Proceed.
-- **Path still listed** → genuinely blocked (e.g. the session's cwd is still inside the worktree). *Now* defer:
+- **Path gone from `git worktree list`** → fake error, cleanup succeeded anyway. Proceed.
+- **Path still listed** → real error. **Escalate yourself before deferring to the user**:
+
+  ```bash
+  python3 -c "import shutil; shutil.rmtree('<worktree-path>')"  # python3 bypasses the EPERM that blocks git
+  git worktree prune                                            # drop the now-stale registration
+  git branch -d <branch>
+  git worktree list                                             # re-verify
+  ```
+
+  Only if the path *still* appears after this, defer:
 
   ```
-  ⚠️ Worktree cleanup genuinely blocked (still in `git worktree list`). Run manually
+  ⚠️ Worktree cleanup genuinely blocked (survives shutil.rmtree + prune). Run manually
   from a fresh terminal/session:
     git worktree remove --force .claude/worktrees/<name>
     git branch -D worktree-<name>

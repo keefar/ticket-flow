@@ -231,8 +231,9 @@ You are in an isolated git worktree. Implement this ticket end-to-end:
 - On a hard blocker: report it back instead of filing the escalation bead
   yourself (the controller files it).
 
-Report: your branch (`git branch --show-current`), commit count, ACs met
-(proven/total), the residual checklist (if any), any blocker.
+Report: your branch (`git branch --show-current`), the sha of your last
+commit (`git rev-parse HEAD`), commit count, ACs met (proven/total), the
+residual checklist (if any), any blocker.
 ```
 
 ### P5. Consolidated checkpoint
@@ -243,10 +244,11 @@ When all subagents return, present **one** checkpoint — per ticket: branch, co
 
 For each ticket whose subagent succeeded, **one at a time** — never two at once (`main` and `.beads/issues.jsonl` are shared state):
 
-1. `cd <main-repo>` — commit `.beads/` if dirty (the dirty-`.beads`-blocks-merge gotcha).
-2. `git merge <worktree-agent-branch>` — on a conflict: stop this ticket, leave it for the user, continue with the rest.
-3. Finish the ticket: run `skills/finish/SKILL.md` steps 6–7 — gating (residual → Testing, none → Done) from the subagent's classification, the state update (bd in Mode A, KANBAN.md in Mode B — never `kanban-render.sh` in the workflow), and worktree cleanup: **`git worktree unlock <path>` then `git worktree remove <path>`** — `Agent`-tool worktrees are created *locked* (lock owner = the Claude session), so a plain `git worktree remove` fails until unlocked. Then `git branch -D <worktree-agent-branch>`.
-4. On a reported hard blocker: file the escalation bead now, controller-side, per `skills/implement/SKILL.md` § Escalation on a hard blocker.
+1. **Verify the commits are on the expected branch** (mandatory, before any merge attempt): `git branch --contains <sha>` with the last-commit sha from the subagent's report — the expected `worktree-agent-<hash>` branch must appear. `isolation: worktree` dispatches occasionally commit straight onto the base branch instead, and the subagent's report still reads like success; only this check catches it. If the expected branch is missing: `git rebase <target-branch>` run inside that worktree replays the commit onto the right base without losing it — then re-run the check. Do not merge until it passes.
+2. `cd <main-repo>` — commit dirty `.beads/` yourself, exactly as in `skills/finish/SKILL.md` step 5c: skip when `.beads/` is gitignored (`git check-ignore -q .beads/issues.jsonl`), otherwise `git add` the dirty `.beads/` exports and `git commit -m "chore: bd-Export-Sync vor Merge"` on the target branch — never leave it to the user (a dirty `.beads/` makes every merge refuse with "Your local changes … would be overwritten").
+3. `git merge <worktree-agent-branch>` — on a conflict: stop this ticket, leave it for the user, continue with the rest.
+4. Finish the ticket: run `skills/finish/SKILL.md` steps 6–7 — gating (residual → Testing, none → Done) from the subagent's classification, the state update (bd in Mode A, KANBAN.md in Mode B — never `kanban-render.sh` in the workflow), and worktree cleanup: **`git worktree unlock <path>` then `git worktree remove <path>`** — `Agent`-tool worktrees are created *locked* (lock owner = the Claude session), so a plain `git worktree remove` fails until unlocked. Then `git branch -D <worktree-agent-branch>`. On an `Operation not permitted` from the remove, apply finish Step 7's verify-then-escalate rule: `git worktree list` decides (the error is often fake); if the path survives, `python3 -c "import shutil; shutil.rmtree('<path>')"` + `git worktree prune` before deferring.
+5. On a reported hard blocker: file the escalation bead now, controller-side, per `skills/implement/SKILL.md` § Escalation on a hard blocker.
 
 ### P7. Final report
 
