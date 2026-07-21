@@ -245,7 +245,7 @@ For each ticket whose subagent succeeded, **one at a time** — never two at onc
 
 1. `cd <main-repo>` — commit `.beads/` if dirty (the dirty-`.beads`-blocks-merge gotcha).
 2. `git merge <worktree-agent-branch>` — on a conflict: stop this ticket, leave it for the user, continue with the rest.
-3. Finish the ticket: run `skills/finish/SKILL.md` steps 6–7 — gating (residual → Testing, none → Done) from the subagent's classification, the state update (bd in Mode A, KANBAN.md in Mode B — never `kanban-render.sh` in the workflow), and worktree cleanup: **`git worktree unlock <path>` then `git worktree remove <path>`** — `Agent`-tool worktrees are created *locked* (lock owner = the Claude session), so a plain `git worktree remove` fails until unlocked. Then `git branch -D <worktree-agent-branch>`.
+3. Finish the ticket: run `skills/finish/SKILL.md` steps 6–7 — gating (residual → Testing, none → Done) from the subagent's classification, the state update (bd in Mode A, KANBAN.md in Mode B — never `kanban-render.sh` in the workflow), and worktree cleanup: **`git worktree unlock <path>` then `git worktree remove <path>`** — `Agent`-tool worktrees are created *locked* (lock owner = the Claude session), so a plain `git worktree remove` fails until unlocked. Then `git branch -D <worktree-agent-branch>`. On an `Operation not permitted` from the remove, apply finish Step 7's verify-then-escalate rule: `git worktree list` decides (the error is often fake); if the path survives, `python3 -c "import shutil; shutil.rmtree('<path>')"` + `git worktree prune` before deferring.
 4. On a reported hard blocker: file the escalation bead now, controller-side, per `skills/implement/SKILL.md` § Escalation on a hard blocker.
 
 ### P7. Final report
