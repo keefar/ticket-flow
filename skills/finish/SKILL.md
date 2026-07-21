@@ -86,7 +86,20 @@ git branch --contains <sha>   # must list <branch> (the worktree branch)
 
 If the expected branch is missing (the commit sits on the wrong branch): `git rebase <target-branch>` run inside the worktree replays the commit onto the right base without losing it — then re-run the check. Do not merge until it passes.
 
-**5c. Before merging — commit `.beads/` first** (when bd is active): `bd` commands (in pickup, here, or the kanban skill) dirty `.beads/*.jsonl` in the working tree. `git merge` against a dirty `.beads/` either refuses ("Your local changes to the following files would be overwritten by merge") or drags the uncommitted state into the merge commit. Commit `.beads/issues.jsonl` (and `.beads/kanban-bd-mapping.json` if it changed) on the **target branch** *before* `git merge` runs — `git status` should be clean apart from the branch you're about to merge.
+**5c. Commit dirty `.beads/` yourself** (when bd is active): every `bd` call (in pickup, here, or the kanban skill) auto-exports to `.beads/issues.jsonl`/`.beads/interactions.jsonl`, leaving an uncommitted diff in the main repo. `git merge` against a dirty `.beads/` either refuses ("Your local changes to the following files would be overwritten by merge") or drags the uncommitted state into the merge commit. Check and commit it as part of this step, on the **target branch** — never leave it to the user:
+
+```bash
+# Edge case: some projects gitignore .beads/ — then there is nothing to commit.
+if ! git check-ignore -q .beads/issues.jsonl \
+   && [[ -n "$(git status --porcelain -- .beads/)" ]]; then
+  for f in .beads/issues.jsonl .beads/interactions.jsonl .beads/kanban-bd-mapping.json; do
+    [[ -f "$f" ]] && git add "$f"
+  done
+  git commit -m "chore: bd-Export-Sync vor Merge"
+fi
+```
+
+Afterwards `git status` is clean apart from the branch you're about to merge.
 
 Skill delegation: `Skill(superpowers:finishing-a-development-branch)` for a clean merge workflow (FF/squash/rebase depending on branch character).
 
