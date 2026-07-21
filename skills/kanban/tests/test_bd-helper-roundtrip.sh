@@ -8,6 +8,8 @@
 #   - bd_set_status <unknown> → exit non-zero
 #   - bd_update_notes_append (idempotent), replace_prefix, remove_prefix
 #   - bd_id_for / bd_kanban_for round-trip via kanban-<N> labels
+#   - bd_id_for identity path: raw bd-ids pass through unchanged (Mode A)
+#   - bd_kanban_for fallback: bead without kanban-<N> label → bd-id itself
 #   - terminal bd close → status=closed
 #
 # Runs in an isolated bd workspace under /tmp/claude/<tmpdir>; the project's
@@ -101,6 +103,41 @@ assert_eq "999"    "$(bd_kanban_for "$BD_ID")" "bd_kanban_for → '999'"
 __BD_LIST_CACHE=""
 UNKNOWN="$(bd_id_for 12345 || true)"
 assert_eq "" "$UNKNOWN" "bd_id_for unknown number → empty"
+
+# 3b. Identity path: raw bd-ids (Mode-A direct invocation) pass through unchanged
+bd create --title="identity-test" --type=task --priority=2 >/dev/null 2>&1
+__BD_LIST_CACHE=""
+BD_ID2="$(bd list --json 2>/dev/null | jq -r '.[] | select(.title == "identity-test") | .id' | head -1)"
+[[ -n "$BD_ID2" && "$BD_ID2" != "null" ]] || { echo "FAIL: could not retrieve identity-test bd-id" >&2; exit 1; }
+
+__BD_LIST_CACHE=""
+if IDENTITY="$(bd_id_for "$BD_ID2")"; then
+  PASS=$((PASS+1))
+else
+  FAIL=$((FAIL+1))
+  FAILED_TESTS+=("bd_id_for raw bd-id should return 0")
+fi
+assert_eq "$BD_ID2" "$IDENTITY" "bd_id_for raw bd-id (no kanban label) → unchanged"
+
+# Pattern-only: identity path needs no bd lookup, works for any <prefix>-<suffix> arg
+__BD_LIST_CACHE=""
+assert_eq "ESP32Matter-4of" "$(bd_id_for "ESP32Matter-4of" || true)" "bd_id_for foreign-shaped bd-id → unchanged (pattern short-circuit)"
+
+# 3c. bd_kanban_for fallback: no kanban-<N> label → bd-id itself, rc=0
+__BD_LIST_CACHE=""
+if KANBAN_FALLBACK="$(bd_kanban_for "$BD_ID2")"; then
+  PASS=$((PASS+1))
+else
+  FAIL=$((FAIL+1))
+  FAILED_TESTS+=("bd_kanban_for without kanban label should return 0")
+fi
+assert_eq "$BD_ID2" "$KANBAN_FALLBACK" "bd_kanban_for without kanban label → bd-id itself"
+
+# Labelled bead keeps resolving to its number (fallback must not shadow the scan)
+__BD_LIST_CACHE=""
+assert_eq "999" "$(bd_kanban_for "$BD_ID")" "bd_kanban_for with kanban label still → number"
+
+bd close "$BD_ID2" --reason="identity-test complete" >/dev/null 2>&1
 
 # 4. bd_set_status across all 4 mutable states
 for state in inbox backlog in_progress testing; do
