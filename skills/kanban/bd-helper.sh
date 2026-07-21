@@ -5,9 +5,15 @@
 #   bd_available           — exits 0 if Mode A (flag says `beads` + bd binary in PATH), 1 otherwise
 #   bd_mode                — echoes "A" (beads) or "B" (kanban), resolved from the
 #                            repo-root `.ticket-flow` flag file
-#   bd_id_for <kanban-num> — resolves kanban# → bd-id by scanning labels (`kanban-<N>`)
-#                            on stdout. Exit 1 (and empty stdout) when not found.
+#   bd_id_for <ref>        — resolves kanban# → bd-id by scanning labels (`kanban-<N>`)
+#                            on stdout. Args that already look like a bd-id
+#                            (`<prefix>-<suffix>`, not a kanban number) are echoed
+#                            unchanged (identity, no bd call) — so Mode-A projects
+#                            can pass raw bd-ids straight through. Exit 1 (and
+#                            empty stdout) when a kanban# is not found.
 #   bd_kanban_for <bd-id>  — inverse — resolves bd-id → kanban# via the same label.
+#                            Beads without a `kanban-<N>` label fall back to the
+#                            bd-id itself (exit 0), so reports never come up empty.
 #   bd_set_status <bd-id> <state>  — wraps the right bd commands per kanban transition
 #                                     state ∈ inbox|backlog|in_progress|testing|done
 #
@@ -74,9 +80,27 @@ __bd_list_cached() {
   printf '%s' "$__BD_LIST_CACHE"
 }
 
+# True when the argument has the kanban-number form: a plain number, optionally
+# prefixed with `#` (e.g. `93` or `#93`). POSIX case-glob — bash 3.2 safe.
+__bd_is_kanban_num() {
+  local ref="${1#\#}"
+  case "$ref" in
+    ''|*[!0-9]*) return 1 ;;
+    *)           return 0 ;;
+  esac
+}
+
 bd_id_for() {
   local num="$1"
   [[ -z "$num" ]] && return 1
+  # Identity short-circuit: in Mode-A (pure beads) projects, /flow and /pickup
+  # are called with raw bd-ids (e.g. `ESP32Matter-4of`). A bd-id always has the
+  # `<prefix>-<suffix>` shape, which a kanban number (`93` / `#93`) never has —
+  # echo it unchanged, no bd call needed.
+  if [[ "$num" == *-* ]] && ! __bd_is_kanban_num "$num"; then
+    echo "$num"
+    return 0
+  fi
   bd_available || return 1
   command -v jq >/dev/null 2>&1 || return 1
   local id
@@ -97,7 +121,10 @@ bd_kanban_for() {
     .[] | select(.id == $id) | (.labels // [])[] | select(startswith("kanban-")) | sub("^kanban-"; "")
   ' 2>/dev/null | head -1)"
   [[ -n "$num" ]] && echo "$num" && return 0
-  return 1
+  # Tolerant fallback: beads without a `kanban-<N>` label (Mode-A projects that
+  # never had a KANBAN.md) resolve to their own bd-id so reports stay non-empty.
+  echo "$bd_id"
+  return 0
 }
 
 # Read the current notes field of a bd issue (empty string if unset).
