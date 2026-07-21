@@ -222,6 +222,11 @@ Spec: <path or none>   Plan: <path or none>
 Acceptance Criteria: <inline list or "see spec">
 
 You are in an isolated git worktree. Implement this ticket end-to-end:
+- FIRST action: an initial plan commit — `git commit --allow-empty`, your
+  implementation plan in the body. Then commit after every sub-step, never
+  batch work uncommitted: if you die early (spend limit/stall), only
+  committed history keeps your worktree alive and resumable — a commitless
+  worktree is auto-removed with all context.
 - Follow skills/implement/SKILL.md steps 3–6 (pick mode by plan complexity,
   incremental commits, typecheck/test after each major step). Skip steps 1–2
   (branch-derivation) — the context above replaces it.
@@ -237,6 +242,13 @@ Report: your branch (`git branch --show-current`), the sha of your last
 commit (`git rev-parse HEAD`), commit count, ACs met (proven/total), the
 residual checklist (if any), any blocker.
 ```
+
+### P4a. Agent death (spend limit / stall)
+
+A subagent can die — API spend limit, or the stall watchdog ("no progress for 600s") — *before* delivering its report, while a usable diff already sits in its worktree. Two rules:
+
+1. **Resume vs. fresh dispatch — decided by worktree existence.** Before any resume attempt: `git worktree list`. Worktree still listed → resume via `SendMessage`, restating the full ticket context plus the state found in the worktree. Worktree gone (death before the first commit — the harness auto-removes an unchanged worktree) → dispatch a **fresh** subagent with the original P4 prompt; **never resume**: a worktree-less resume continues in the main checkout and silently loses isolation.
+2. **Inspect the diff after every death — before resuming, merging, or discarding.** `git diff --stat` in the surviving worktree + read the touched files against the ticket's requirements. The agent's last inline message often describes intent, not result — never adopt the work unchecked, never discard it unchecked.
 
 ### P5. Consolidated checkpoint
 
