@@ -210,6 +210,8 @@ The `branch:` lock marker is **not** set here — each subagent's branch (`workt
 
 ### P4. Dispatch one subagent per ticket
 
+**Bundle file-overlapping tickets first (heuristic, not an algorithm).** Two worktree agents that touch the same core file fork from different points of `main` and produce a real 3-way merge conflict at P6 — even when the tickets change textually disjoint functions. Before dispatching, skim each ticket's spec/notes/description for the files it names; tickets that share a file go to **one** subagent — one worktree, one prompt covering all bundled tickets. Specs/notes usually name the core files; when unsure, bundle. P6 then treats a bundle as one unit: one branch, one merge, finish per ticket.
+
 Dispatch all subagents in a **single message** (multiple `Agent` calls → they run concurrently), each with `subagent_type: "general-purpose"`, `isolation: "worktree"`, and `model:` chosen by ticket complexity (the model-tier table in `skills/implement/SKILL.md`, `ticket-flow-sqh`).
 
 Each prompt is **self-contained** — the controller supplies everything, because the subagent's branch is not a tf `branch:` marker and KANBAN branch-derivation will not find the item:
@@ -242,7 +244,7 @@ When all subagents return, present **one** checkpoint — per ticket: branch, co
 
 ### P6. Merge — controller, strictly sequential
 
-For each ticket whose subagent succeeded, **one at a time** — never two at once (`main` and `.beads/issues.jsonl` are shared state):
+For each ticket whose subagent succeeded, **one at a time** — never two at once (`main` and `.beads/issues.jsonl` are shared state). A P4 bundle is **one** unit here: one branch, steps 1–3 once, then step 4 per bundled ticket.
 
 1. **Verify the commits are on the expected branch** (mandatory, before any merge attempt): `git branch --contains <sha>` with the last-commit sha from the subagent's report — the expected `worktree-agent-<hash>` branch must appear. `isolation: worktree` dispatches occasionally commit straight onto the base branch instead, and the subagent's report still reads like success; only this check catches it. If the expected branch is missing: `git rebase <target-branch>` run inside that worktree replays the commit onto the right base without losing it — then re-run the check. Do not merge until it passes.
 2. `cd <main-repo>` — commit dirty `.beads/` yourself, exactly as in `skills/finish/SKILL.md` step 5c: skip when `.beads/` is gitignored (`git check-ignore -q .beads/issues.jsonl`), otherwise `git add` the dirty `.beads/` exports and `git commit -m "chore: bd-Export-Sync vor Merge"` on the target branch — never leave it to the user (a dirty `.beads/` makes every merge refuse with "Your local changes … would be overwritten").
