@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Tests for parse-flow-args.sh — /ticket-flow:flow run-mode argument parsing:
 # mode detection (local|parallel), --parallel id collection, the
-# whole-ready-queue (no-id) case, and the rejected flag combinations.
+# whole-ready-queue (no-id) case, the --serial/--loop modifiers (imply
+# --parallel; --loop takes no ids), and the rejected flag combinations.
 set -u
 
 SCRIPT="$(cd "$(dirname "$0")/.." && pwd)/parse-flow-args.sh"
@@ -121,6 +122,45 @@ test_reject_parallel_decisions() {
 # 13) reject: no args at all
 test_reject_no_args() { assert_rejects "no args"; }
 
+# 14) --serial implies parallel machinery; explicit ids allowed
+test_serial_implies_parallel() {
+  parse_ok --serial 12 15 || return
+  assert_eq "parallel" "$MODE" "--serial → parallel mode (implied)"
+  assert_eq "1" "$SERIAL" "--serial → SERIAL=1"
+  assert_eq "0" "$LOOP" "--serial → LOOP=0"
+  assert_eq "12 15" "${PARALLEL_IDS[*]}" "--serial ids → collected"
+}
+
+# 15) --loop implies parallel machinery; no ids → whole queue
+test_loop_implies_parallel() {
+  parse_ok --loop || return
+  assert_eq "parallel" "$MODE" "--loop → parallel mode (implied)"
+  assert_eq "1" "$LOOP" "--loop → LOOP=1"
+  assert_eq "0" "${#PARALLEL_IDS[@]}" "--loop → empty PARALLEL_IDS (live queue)"
+}
+
+# 16) --serial --loop --use-recommendations (the autopilot form)
+test_serial_loop_recs() {
+  parse_ok --serial --loop --use-recommendations || return
+  assert_eq "1" "$SERIAL" "serial+loop → SERIAL=1"
+  assert_eq "1" "$LOOP" "serial+loop → LOOP=1"
+  assert_eq "1" "$USE_RECS" "serial+loop → USE_RECS=1"
+  assert_eq "parallel" "$MODE" "serial+loop → parallel mode"
+}
+
+# 17) plain --parallel leaves SERIAL/LOOP at 0
+test_parallel_defaults_serial_loop() {
+  parse_ok --parallel 12 || return
+  assert_eq "0" "$SERIAL" "--parallel → SERIAL=0"
+  assert_eq "0" "$LOOP" "--parallel → LOOP=0"
+}
+
+# 18) reject: --loop with explicit ids
+test_reject_loop_ids() { assert_rejects "--loop + ids" --loop 12 15; }
+
+# 19) reject: --serial + --decisions (serial implies parallel)
+test_reject_serial_decisions() { assert_rejects "--serial + --decisions" --serial --decisions 1; }
+
 test_local_default
 test_local_suffix
 test_parallel_no_id
@@ -134,6 +174,12 @@ test_reject_no_id
 test_reject_decisions_recs
 test_reject_parallel_decisions
 test_reject_no_args
+test_serial_implies_parallel
+test_loop_implies_parallel
+test_serial_loop_recs
+test_parallel_defaults_serial_loop
+test_reject_loop_ids
+test_reject_serial_decisions
 
 echo ""
 echo "=== parse-flow-args.sh tests: $PASS passed, $FAIL failed ==="

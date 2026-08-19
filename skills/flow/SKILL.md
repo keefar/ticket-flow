@@ -1,12 +1,12 @@
 ---
 name: flow
-description: Orchestrator for Ticket-Flow — default is `--local` (all phases in this session with user checkpoints). `--parallel` works multiple ready tickets at once via worktree-isolated subagents in this session. Invoke as `/ticket-flow:flow <kanban-id>` or `/ticket-flow:flow --parallel [<id>…]`. Also trigger on any natural-language request to work on, implement, umsetzen, bearbeiten, or abarbeiten a specific bead/issue/kanban-item — not only the literal slash command. Phrasing like "implementier DSP-xyz", "setz Bead X um", "lass uns den Bead angehen", "arbeite die offenen/ready Beads ab" all count (User-Anweisung 2026-07-05: muss auch sinngemäß triggern, nicht nur wortwörtlich).
+description: Orchestrator for Ticket-Flow — default is `--local` (all phases in this session with user checkpoints). `--parallel` works multiple ready tickets at once via worktree-isolated subagents in this session; `--serial` (one subagent at a time, merge+deploy+cleanup per ticket) and `--loop` (re-query the ready queue after every merge until empty) turn it into an unattended queue runner. Invoke as `/ticket-flow:flow <kanban-id>`, `/ticket-flow:flow --parallel [<id>…]` or `/ticket-flow:flow --serial --loop [--use-recommendations]`. Also trigger on any natural-language request to work on, implement, umsetzen, bearbeiten, or abarbeiten a specific bead/issue/kanban-item — not only the literal slash command. Phrasing like "implementier DSP-xyz", "setz Bead X um", "lass uns den Bead angehen", "arbeite die offenen/ready Beads ab" all count (User-Anweisung 2026-07-05: muss auch sinngemäß triggern, nicht nur wortwörtlich).
 ---
 
 # /flow — Ticket-Flow orchestrator
 
 **Args**:
-- `<kanban-id>` (required — *except* with `--parallel`) · `<branch-suffix>` (optional, forwarded to /pickup) · `--parallel` (optional — work multiple tickets at once via worktree-isolated subagents; with no id = the whole ready queue, see **## Parallel mode**) · `--local` (optional, **the default** — kept as explicit flag for symmetry) · `--decisions a,b,c` / `--use-recommendations` (optional, mutually exclusive — resolve the spec's `## Decisions` section; see step 1.6; `--decisions` is rejected with `--parallel`).
+- `<kanban-id>` (required — *except* with `--parallel`) · `<branch-suffix>` (optional, forwarded to /pickup) · `--parallel` (optional — work multiple tickets at once via worktree-isolated subagents; with no id = the whole ready queue, see **## Parallel mode**) · `--local` (optional, **the default** — kept as explicit flag for symmetry) · `--serial` (optional — modifier of the subagent machinery, implies `--parallel`: **one** subagent at a time, merge + deploy + cleanup per ticket right after it returns; see **## Serial and loop**) · `--loop` (optional — modifier, implies `--parallel`: after every merge re-query the ready queue and continue until it is empty; takes no ids) · `--decisions a,b,c` / `--use-recommendations` (optional, mutually exclusive — resolve the spec's `## Decisions` section; see step 1.6; `--decisions` is rejected with `--parallel`/`--serial`/`--loop`).
 
 ## Decide, don't prompt — clear-cut points get a default (all modes)
 
@@ -15,7 +15,7 @@ description: Orchestrator for Ticket-Flow — default is `--local` (all phases i
 Three things still stop on purpose — they are neither clear-cut nor indifferent:
 
 - **`--local`'s per-phase checkpoints** — the "Ready for /implement? / finish?" review gates in steps 4/5/6. These *are* the value of `--local`; they stay. A checkpoint-free local run, if ever wanted, is a separate future flag.
-- **`--parallel`'s P5 consolidated checkpoint** — merge all / subset / stop.
+- **`--parallel`'s P5 consolidated checkpoint** — merge all / subset / stop. **Not in `--serial`**: that modifier exists for unattended runs, so each ticket merges right after its subagent returns and P5 becomes a per-ticket *report*, not a question — the gates are finish's verification and the merge guard (finish Step 7). Want checkpoints? Use plain `--parallel` (one consolidated) or `--local` (per phase).
 - **The step-1.6 decision gate** — a spec's genuine `## Decisions` section is ambiguous by construction; resolved by the user or by `--use-recommendations`, never auto-decided here.
 
 Everything else — reference-fork with nothing to fork, sub-item strategy when there are no sub-items, "inline plan or structured plan" for a trivial bug, "which implement mode" when the plan/item makes it obvious — auto-decides. The phase skills (`pickup`, `implement`) follow the same rule; see their step notes.
@@ -25,6 +25,8 @@ Everything else — reference-fork with nothing to fork, sub-item strategy when 
 **Default (`/ticket-flow:flow <id>`)** — *equivalent to --local*: all three phases run sequentially in this session with user checkpoints between phases.
 
 **Parallel (`/ticket-flow:flow --parallel [<id>…]`)** — opt-in: works **multiple independent tickets at once**. This session is the controller; it dispatches one worktree-isolated subagent per ticket (`Agent` tool, `isolation: worktree`), collects the results, and merges them strictly sequentially. No id → the whole ready queue. See **## Parallel mode** below.
+
+**Serial / loop (`/ticket-flow:flow --serial --loop [--use-recommendations]`)** — the unattended queue runner: `--serial` dispatches **one** subagent at a time and merges, deploys and cleans up each ticket before the next one starts; `--loop` re-queries `bd ready` after every merge (newly unblocked tickets join), sweeps Testing items first, defers tickets with an unresolved decision gate instead of stopping, and ends when the queue is empty. Both imply `--parallel` and are the generic core of a personal autopilot skill; project policy (deploy targets, version bumps, time budget, hand-off notes) stays with the caller. See **## Serial and loop** below.
 
 ```
 DEFAULT (--local):
@@ -45,15 +47,15 @@ For fine-grained control: invoke `/ticket-flow:pickup`, `/ticket-flow:implement`
 # Parse the run-mode args via the pure helper. parse-flow-args.sh is
 # unit-tested by tests/test_flow-parallel.sh; it sets MODE (local|parallel),
 # ID, SUFFIX, PARALLEL_IDS (array — empty in parallel mode = whole ready
-# queue), LOCAL, USE_RECS, DECISIONS — or exits non-zero with an `ERROR:` on
-# stderr.
+# queue), LOCAL, USE_RECS, DECISIONS, SERIAL, LOOP (--serial/--loop imply
+# MODE=parallel) — or exits non-zero with an `ERROR:` on stderr.
 PARSED="$("${CLAUDE_PLUGIN_ROOT}/skills/flow/parse-flow-args.sh" "$@")" || exit 1
 eval "$PARSED"
 ```
 
 ### 1.7. Route: parallel mode
 
-**If `MODE` is `parallel`** → steps 1.6–7 below do not apply (they are the single-ticket path). Jump to **## Parallel mode (`--parallel`)** at the end of this skill.
+**If `MODE` is `parallel`** (also set by `--serial`/`--loop`) → steps 1.6–7 below do not apply (they are the single-ticket path). Jump to **## Parallel mode (`--parallel`)** at the end of this skill; `SERIAL`/`LOOP` select the deltas marked there.
 
 ### 1.6. Decision gate
 
@@ -187,10 +189,14 @@ In **Mode B** (`mode=kanban`) the original KANBAN.md → Testing wording is corr
 - **No id** → the whole ready queue: `bd ready` (Mode A, `mode=beads`) or the Backlog section of KANBAN.md (Mode B, `mode=kanban`). Keep only DoR-met items (same DoR as `/ticket-flow:pickup` step 2).
 - **Explicit ids** → validate each is in Backlog + DoR-met; a bad id aborts the whole batch with a clear error.
 - **Empty set** → report "nothing ready" and stop.
+- **Order** (matters in `--serial`/`--loop`, harmless otherwise): priority P0→P4 first; within a priority, tickets that unblock the most others (`bd show` dependents) first; then bugs with correctness/safety impact before features/comfort. Explicit ids keep the user's order.
+- **Testing sweep (`--loop` only, before new work)**: list `testing` items (Mode A: label `testing`; Mode B: the Testing section) and verify each against the **code state**, not the item text — does the test/code/config evidence now prove it? What is agent-provable gets closed with the evidence as close reason; what genuinely needs the user's senses/hardware stays. Never re-implement a Testing item.
 
 ### P2. Decision gate — all tickets, up front
 
 Run the step 1.6 decision gate for **every** ticket in the set. If **any** ticket has an unresolved `## Decisions` section (no covering `## Decision Log`), **STOP the whole batch** — never dispatch a partial set. Report which tickets need decisions and how to resolve them (the `/ticket-flow:spec` review step, or `--use-recommendations`). `--decisions` is rejected with `--parallel` (positional picks can't map across multiple tickets).
+
+**`--loop` exception**: the set is dynamic, so an unresolved gate does not stop the run — the ticket is **deferred** (left in Backlog, listed in the final report with the two ways to resolve it) and the loop continues with the rest. `--use-recommendations` resolves every gate up front and is the intended companion flag for unattended runs.
 
 ### P3. Mark all tickets In Progress (controller, sequential)
 
@@ -208,11 +214,13 @@ BD_ID="$(bd_id_for "$ID")"; bd_set_status "$BD_ID" in_progress
 
 The `branch:` lock marker is **not** set here — each subagent's branch (`worktree-agent-<hash>`) only exists once its worktree is created. In `--parallel` the controller tracks the branch↔ticket mapping in-session instead.
 
+**`--serial`**: mark each ticket In Progress **immediately before its own dispatch**, not the whole set up front — `bd ready` stays truthful for everything still queued, and a run that dies leaves at most one orphaned In-Progress item.
+
 ### P4. Dispatch one subagent per ticket
 
 **Bundle file-overlapping tickets first (heuristic, not an algorithm).** Two worktree agents that touch the same core file fork from different points of `main` and produce a real 3-way merge conflict at P6 — even when the tickets change textually disjoint functions. Before dispatching, skim each ticket's spec/notes/description for the files it names; tickets that share a file go to **one** subagent — one worktree, one prompt covering all bundled tickets. Specs/notes usually name the core files; when unsure, bundle. P6 then treats a bundle as one unit: one branch, one merge, finish per ticket.
 
-Dispatch all subagents in a **single message** (multiple `Agent` calls → they run concurrently), each with `subagent_type: "general-purpose"`, `isolation: "worktree"`, and `model:` chosen by ticket complexity (the model-tier table in `skills/implement/SKILL.md`, `ticket-flow-sqh`).
+Dispatch all subagents in a **single message** (multiple `Agent` calls → they run concurrently), each with `subagent_type: "general-purpose"`, `isolation: "worktree"`, and `model:` chosen by ticket complexity (the model-tier table in `skills/implement/SKILL.md`, `ticket-flow-sqh`). **`--serial`**: dispatch **one** `Agent` call, wait for its report, run P6 for that ticket, then dispatch the next — never two in flight.
 
 Each prompt is **self-contained** — the controller supplies everything, because the subagent's branch is not a tf `branch:` marker and KANBAN branch-derivation will not find the item:
 
@@ -232,7 +240,8 @@ You are in an isolated git worktree. Implement this ticket end-to-end:
   (branch-derivation) — the context above replaces it.
 - Then run skills/finish/SKILL.md steps 2–4 (typecheck, tests, testable-
   surface gate, optional review/deploy) and classify every AC as *proven*
-  or *residual*.
+  or *residual*. [--serial: steps 2–3 only — do NOT deploy; the controller
+  deploys from the merged target branch after the merge.]
 - Do NOT merge, do NOT push, do NOT touch .beads/ or KANBAN.md, do NOT run
   the finish merge/cleanup steps.
 - On a hard blocker: report it back instead of filing the escalation bead
@@ -254,6 +263,8 @@ A subagent can die — API spend limit, or the stall watchdog ("no progress for 
 
 When all subagents return, present **one** checkpoint — per ticket: branch, commits, ACs proven/residual, blockers. `--parallel` has **no per-ticket checkpoints** — that is the trade for throughput; use the default `--local` when you want them. Ask once: merge all / merge a subset / stop.
 
+**`--serial`**: no question — print the same per-ticket line as a **report** and go straight to P6 for that ticket. The run stops only for a hard blocker (escalation bead), a merge conflict on that ticket (left standing, loop continues), or an unresolved decision gate without `--use-recommendations` (deferred in `--loop`, stop otherwise).
+
 ### P6. Merge — controller, strictly sequential
 
 For each ticket whose subagent succeeded, **one at a time** — never two at once (`main` and `.beads/issues.jsonl` are shared state). A P4 bundle is **one** unit here: one branch, steps 1–3 once, then step 4 per bundled ticket.
@@ -264,9 +275,17 @@ For each ticket whose subagent succeeded, **one at a time** — never two at onc
 4. Finish the ticket: run `skills/finish/SKILL.md` steps 6–7 — gating (residual → Testing, none → Done) from the subagent's classification, the state update (bd in Mode A, KANBAN.md in Mode B — never `kanban-render.sh` in the workflow), and worktree cleanup **behind finish Step 7's guard**: first `git -C <main-repo> merge-base --is-ancestor <worktree-agent-branch> <target-branch>` (fails → the merge in step 3 did not land, e.g. it ran from a cwd where that branch was already HEAD and printed "Already up to date" — **stop this ticket, no cleanup, no `-D`**) and `git -C <path> status --porcelain` empty; only then **`git worktree unlock <path>` then `git worktree remove <path>`** — `Agent`-tool worktrees are created *locked* (lock owner = the Claude session), so a plain `git worktree remove` fails until unlocked. Then `git branch -D <worktree-agent-branch>` (safe only because the guard proved containment). On an `Operation not permitted` from the remove, apply finish Step 7's verify-then-escalate rule: `git worktree list` decides (the error is often fake); if the path survives, `python3 -c "import shutil; shutil.rmtree('<path>')"` + `git worktree prune` before deferring.
 5. On a reported hard blocker: file the escalation bead now, controller-side, per `skills/implement/SKILL.md` § Escalation on a hard blocker.
 
+**`--serial` additions** (between step 3 and step 4): **3b. Deploy from the merged target branch** — if the project defines a deploy (finish Step 4's project deploy step, or a standing order in the project's CLAUDE.md), the **controller** runs it now, from `<main-repo>` on the freshly merged `<target-branch>`; the subagent was told not to. One deploy target, never concurrent, always the merged state. A failed deploy **stops the run** (no rollback, everything left for inspection — same rule as finish). Then step 4 as above (state update + guarded cleanup).
+
+**`--loop` additions** (after step 4): re-run **P1** — `bd ready` again (merged tickets may have unblocked others), re-apply the order, skip deferred/blocked/conflicted tickets from this run, and continue with P3 for the next ticket. The loop ends when the queue is empty, when every remaining ticket is deferred/blocked, or when the caller's own budget logic says so (tf has no clock — a wake-up timer is the caller's policy).
+
 ### P7. Final report
 
-One consolidated report — per ticket: Done / Testing (+ residual pointer) / merge-conflict / blocked. Network ops stay out: `--parallel` leaves commits local like the default mode; the user runs `/ticket-flow:push` from this session afterwards.
+One consolidated report — per ticket: Done / Testing (+ residual pointer) / merge-conflict / blocked. `--loop` adds: Testing items closed by the sweep (with evidence), tickets **deferred** (open decision gate — name the two ways to resolve), escalation beads filed, deploys run, and why the loop ended (queue empty / all remaining deferred or blocked / caller stop). Network ops stay out: `--parallel`/`--serial`/`--loop` leave commits local like the default mode; the user runs `/ticket-flow:push` from this session afterwards.
+
+## Serial and loop — summary
+
+`--serial` and `--loop` are **modifiers** of the parallel machinery (they imply `--parallel`; the arg parser emits `SERIAL`/`LOOP`). Everything in P1–P7 applies, with the deltas marked **`--serial`** / **`--loop`** above: ordered set + Testing sweep (P1), deferral instead of batch-stop (P2), In Progress per ticket (P3), one subagent in flight and no subagent deploy (P4), report instead of checkpoint (P5), controller deploy after merge + re-query (P6), extended report (P7). P4a (agent death) and finish Step 7's guard (is-ancestor + clean tree before any `-D`/`remove`) apply unchanged. What stays **outside tf** by design: deploy targets and version bumps, spend/time budgets and wake-up timers, hand-off notes into a personal knowledge vault — that is the caller's (e.g. a personal autopilot skill's) policy layer.
 
 ## What it doesn't do
 
