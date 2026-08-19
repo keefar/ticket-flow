@@ -98,6 +98,7 @@ Missing spec or frontmatter (Mode B / spec-less items): skip this step silently.
 
 **Fallback only if EnterWorktree is unavailable**: `Skill(superpowers:using-git-worktrees)` + manual `git worktree add`. WARNING:
 - On macOS Sequoia (15.x): the `com.apple.provenance` xattr on files under `.claude/agents/` and `.mcp.json` blocks `git worktree add` with "Operation not permitted" — even with `dangerouslyDisableSandbox: true`. Workaround: `xattr -d com.apple.provenance ...` is insufficient; EnterWorktree avoids the issue.
+- If worktrees must live **outside** `.claude/worktrees/` (xattr trouble there, build tools that choke on `.claude/`, non-git VCS): do not hand-roll `git worktree add` either — wire a `WorktreeCreate`/`WorktreeRemove` hook pair in `.claude/settings.json`; per the CC docs it replaces the default `git worktree` logic *including the location*, and `EnterWorktree`/`ExitWorktree` keep working on top of it (worktrunk ships a ready-made pair as a CC plugin). Everything downstream (`branch:`-lock, finish cleanup) must then use the path the hook returned, not `.claude/worktrees/<name>`.
 
 **Base ref note**: EnterWorktree defaults to branching from `origin/<default-branch>` — when working on an active feature branch (e.g. `tauri-prototype`), set `worktree.baseRef = "head"` in settings.json or everything since the last main sync is lost.
 

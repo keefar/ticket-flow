@@ -180,6 +180,17 @@ Plus, if a bug log is warranted (multiple hypotheses, algorithmic fix, regressio
 
 ### 7. Worktree cleanup
 
+**Guard first, cleanup second** — two pre-conditions, checked from the main-repo root **before** any `git worktree remove` / `git branch -d` / `git branch -D` in this step (including the escalation path below). Both are mandatory; if either fails, **stop: touch neither worktree nor branch**, report, and leave the worktree standing for inspection:
+
+```bash
+git merge-base --is-ancestor <branch> <target-branch> \
+  || { echo "STOP: <branch> is not contained in <target-branch> — merge did not land, no cleanup"; }
+[ -z "$(git -C <worktree-path> status --porcelain)" ] \
+  || { echo "STOP: <worktree-path> has uncommitted changes — no cleanup"; }
+```
+
+Why: a merge that ran from the wrong cwd (e.g. still inside a worktree whose branch is already HEAD there) reports "Already up to date" and does nothing — a subsequent `git branch -D` would then delete unmerged work. `git worktree remove` refuses a dirty tree on its own, but the `is-ancestor` check is the only thing standing between a silently failed merge and a force-deleted branch. (Pattern from bead-workflow-skills `/done-with`.)
+
 If the merge skill didn't already do it:
 ```bash
 git worktree remove <worktree-path>
@@ -203,7 +214,7 @@ git worktree list                     # ← source of truth: is <worktree-path> 
   git worktree list                                             # re-verify
   ```
 
-  Only if the path *still* appears after this, defer:
+  Only if the path *still* appears after this, defer (the guard above has already proven the branch is contained in `<target-branch>` — that is what makes the `-D` safe to hand out):
 
   ```
   ⚠️ Worktree cleanup genuinely blocked (survives shutil.rmtree + prune). Run manually
