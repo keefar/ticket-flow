@@ -6,7 +6,7 @@ description: First-time publish — create a remote GitHub repository AND push t
 # /ticket-flow:publish — First-time repo publish
 
 **Args**:
-- `<owner>/<name>` (required) — e.g. `chris/my-project`
+- `<owner>/<name>` (required) — e.g. `your-gh-user/my-project`
 - `<visibility>` (required) — `public` · `private` · `internal`
 
 ## Why this exists

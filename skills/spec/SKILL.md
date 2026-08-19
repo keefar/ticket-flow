@@ -1,14 +1,14 @@
 ---
 name: spec
-description: Create a Spec doc for a KANBAN item from SPEC-TEMPLATE.md. Interactive mode sets the Kanban note to `spec: drafting`; `--auto` drafts the whole spec non-interactively and sets `spec: review`. Invoke as `/ticket-flow:spec <kanban-id>`, `/ticket-flow:spec <kanban-id> <author>` (default author=chris), or `/ticket-flow:spec <kanban-id> --auto`.
+description: Create a Spec doc for a KANBAN item from SPEC-TEMPLATE.md. Interactive mode sets the Kanban note to `spec: drafting`; `--auto` drafts the whole spec non-interactively and sets `spec: review`. Invoke as `/ticket-flow:spec <kanban-id>`, `/ticket-flow:spec <kanban-id> <author>` (default author = `git config user.name`, fallback `$USER`), or `/ticket-flow:spec <kanban-id> --auto`.
 ---
 
 # /ticket-flow:spec — Create item spec from template
 
-**Args**: `<kanban-id>` (required, numeric) · `<author>` (optional, default `chris`) · `--auto` (optional, position-independent — non-interactive full draft)
+**Args**: `<kanban-id>` (required, numeric) · `<author>` (optional, default: `git config user.name`, fallback `$USER`) · `--auto` (optional, position-independent — non-interactive full draft)
 
 Examples:
-- `/ticket-flow:spec 94` → drafting author = chris
+- `/ticket-flow:spec 94` → drafting author = `git config user.name` (e.g. `Jane Doe`)
 - `/ticket-flow:spec 80 agent` → drafting author = agent
 - `/ticket-flow:spec 80a agent` → for split sub-items (letter suffix allowed)
 - `/ticket-flow:spec 94 --auto` → full autonomous draft, no questions, Kanban note → `spec: review`
@@ -90,7 +90,8 @@ Examples:
       if [[ "$USE_AUTO" -eq 1 ]]; then
         bd_update_notes_replace_prefix "$BD_ID" "spec:" "spec: review"
       else
-        bd_update_notes_replace_prefix "$BD_ID" "spec:" "spec: drafting (${AUTHOR:-chris})"
+        AUTHOR="${AUTHOR:-$(git config user.name 2>/dev/null || true)}"; AUTHOR="${AUTHOR:-$USER}"
+        bd_update_notes_replace_prefix "$BD_ID" "spec:" "spec: drafting (${AUTHOR})"
       fi
     fi
     ```
