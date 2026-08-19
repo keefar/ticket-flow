@@ -128,7 +128,7 @@ test_serial_implies_parallel() {
   assert_eq "parallel" "$MODE" "--serial → parallel mode (implied)"
   assert_eq "1" "$SERIAL" "--serial → SERIAL=1"
   assert_eq "0" "$LOOP" "--serial → LOOP=0"
-  assert_eq "12 15" "${PARALLEL_IDS[*]}" "--serial ids → collected"
+  assert_eq "12 15" "${PARALLEL_IDS[*]:-}" "--serial ids → collected"
 }
 
 # 15) --loop implies parallel machinery; no ids → whole queue
