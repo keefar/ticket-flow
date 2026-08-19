@@ -6,7 +6,7 @@ description: Orchestrator for Ticket-Flow — default is `--local` (all phases i
 # /flow — Ticket-Flow orchestrator
 
 **Args**:
-- `<kanban-id>` (required — *except* with `--parallel`) · `<branch-suffix>` (optional, forwarded to /pickup) · `--parallel` (optional — work multiple tickets at once via worktree-isolated subagents; with no id = the whole ready queue, see **## Parallel mode**) · `--local` (optional, **the default** — kept as explicit flag for symmetry) · `--serial` (optional — modifier of the subagent machinery, implies `--parallel`: **one** subagent at a time, merge + deploy + cleanup per ticket right after it returns; see **## Serial and loop**) · `--loop` (optional — modifier, implies `--parallel`: after every merge re-query the ready queue and continue until it is empty; takes no ids) · `--decisions a,b,c` / `--use-recommendations` (optional, mutually exclusive — resolve the spec's `## Decisions` section; see step 1.6; `--decisions` is rejected with `--parallel`/`--serial`/`--loop`).
+- `<kanban-id>` (required — *except* with `--parallel`) · `<branch-suffix>` (optional, forwarded to /pickup) · `--parallel` (optional — work multiple tickets at once via worktree-isolated subagents; with no id = the whole ready queue, see **## Parallel mode**) · `--local` (optional, **the default** — kept as explicit flag for symmetry) · `--serial` (optional — modifier of the subagent machinery, implies `--parallel`: **one** subagent at a time, merge + deploy + cleanup per ticket right after it returns; see **## Serial and loop**) · `--loop` (optional — modifier, implies `--parallel`: after every merge re-query the ready queue and continue until it is empty; takes no ids) · `--here` (optional, local mode only — forwarded to `/ticket-flow:pickup --here`: adopt the worktree/branch this session is already in — orca, Conductor, worktrunk, bead-workflow-skills — instead of creating one; rejected with `--parallel`/`--serial`/`--loop`) · `--decisions a,b,c` / `--use-recommendations` (optional, mutually exclusive — resolve the spec's `## Decisions` section; see step 1.6; `--decisions` is rejected with `--parallel`/`--serial`/`--loop`).
 
 ## Decide, don't prompt — clear-cut points get a default (all modes)
 
@@ -48,7 +48,7 @@ For fine-grained control: invoke `/ticket-flow:pickup`, `/ticket-flow:implement`
 # unit-tested by tests/test_flow-parallel.sh; it sets MODE (local|parallel),
 # ID, SUFFIX, PARALLEL_IDS (array — empty in parallel mode = whole ready
 # queue), LOCAL, USE_RECS, DECISIONS, SERIAL, LOOP (--serial/--loop imply
-# MODE=parallel) — or exits non-zero with an `ERROR:` on stderr.
+# MODE=parallel), HERE (local only) — or exits non-zero with an `ERROR:` on stderr.
 PARSED="$("${CLAUDE_PLUGIN_ROOT}/skills/flow/parse-flow-args.sh" "$@")" || exit 1
 eval "$PARSED"
 ```
@@ -84,7 +84,7 @@ Before pickup, check whether the item's spec still has design decisions that nee
 
 ### 2. Phase 1: pickup
 
-Invoke `Skill(ticket-flow:pickup)` with `<kanban-id>` + optional `<branch-suffix>`.
+Invoke `Skill(ticket-flow:pickup)` with `<kanban-id>` + optional `<branch-suffix>`; forward `--here` when `HERE=1` (the session already sits in the ticket's worktree — pickup adopts it, creates nothing).
 
 On error (DoR not met, item not in Backlog, etc.): abort + report. The user can fix the issue and re-run `/flow`.
 

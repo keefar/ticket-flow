@@ -1,20 +1,21 @@
 ---
 name: pickup
-description: Claim a KANBAN Backlog item for work — validate DoR, create isolated worktree, scaffold plan, set branch-lock, move item to In Progress. Invoke as `/ticket-flow:pickup <kanban-id>` or `/ticket-flow:pickup <id> <branch-suffix>`.
+description: Claim a KANBAN Backlog item for work — validate DoR, create isolated worktree, scaffold plan, set branch-lock, move item to In Progress. Invoke as `/ticket-flow:pickup <kanban-id>`, `/ticket-flow:pickup <id> <branch-suffix>`, or `/ticket-flow:pickup <id> --here` to adopt the worktree/branch you are already in (orca, Conductor, worktrunk, bead-workflow-skills cards) instead of creating one.
 ---
 
 # /ticket-flow:pickup — Phase 1 of Ticket-Flow
 
-**Args**: `<kanban-id>` (required) · `<branch-suffix>` (optional, default = slug from title)
+**Args**: `<kanban-id>` (required) · `<branch-suffix>` (optional, default = slug from title) · `--here` (optional — **adopt** the current worktree + branch instead of creating one; ignores `<branch-suffix>`)
 
 Examples:
 - `/ticket-flow:pickup 92` → branch `change/92-sidebar-drawer`
 - `/ticket-flow:pickup 94 multipoint` → branch `feature/94-multipoint`
+- `/ticket-flow:pickup 94 --here` → inside an orca/worktrunk card on branch `chris/multipoint`: no new worktree, that branch becomes the ticket's branch
 
 ## What it does
 
 1. Validates that the item is in Backlog and DoR is met
-2. Creates a worktree (via `superpowers:using-git-worktrees`)
+2. Creates a worktree (EnterWorktree, fallback `superpowers:using-git-worktrees`) — or, with `--here`, **adopts** the worktree you are already in (external tool owns it; `/finish` will leave it in place)
 3. Sets a `branch:` lock (bd notes in Mode A, the KANBAN.md note in Mode B)
 4. Moves item Backlog → In Progress
 5. Looks for or scaffolds a plan doc under `docs/superpowers/plans/`
@@ -82,6 +83,21 @@ Parse the spec's YAML frontmatter — path canonically from the note's `[Spec]` 
 
 Missing spec or frontmatter (Mode B / spec-less items): skip this step silently.
 
+### 3+4 with `--here` — adopt the current worktree (skip the two steps below)
+
+When `--here` is passed, no worktree is created and no branch name is built — the session is already inside the worktree an external tool (orca card, Conductor workspace, `wt switch --create`, bead-workflow-skills `/work-on`, a manual `git worktree add`) prepared:
+
+```bash
+WORKTREE="$(git rev-parse --show-toplevel)"                         # this worktree's root
+MAIN_REPO="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"
+BRANCH="$(git branch --show-current)"
+DEFAULT="$(git symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##')"; DEFAULT="${DEFAULT:-main}"
+[[ -z "$BRANCH" ]] && { echo "STOP: detached HEAD — check out a branch first"; exit 1; }
+[[ "$BRANCH" == "$DEFAULT" || "$WORKTREE" == "$MAIN_REPO" ]] && { echo "STOP: --here needs a feature worktree, not the main checkout on $DEFAULT"; exit 1; }
+```
+
+Guards: must be inside a git worktree, on a named branch, and not the main checkout / default branch. Uncommitted work in the adopted worktree is fine (it is the user's). `<branch-suffix>` is ignored — the branch already exists and is not renamed. Then continue with step 5 (branch lock = `$BRANCH`, plus the `worktree: external` note) and step 6.
+
 ### 3. Build the branch name
 
 - With EnterWorktree: `name = <id>-<slug>` (the tool prepends `worktree-`), actual branch = `worktree-<id>-<slug>`
@@ -122,6 +138,9 @@ if [[ -n "$BD_ID" ]]; then
   # Replace any existing `branch: …` line in notes with the new one; preserves
   # other notes (e.g. [Verify] pointers from prior /finish runs on this id).
   bd_update_notes_replace_prefix "$BD_ID" "branch:" "branch: $BRANCH"
+  # --here: record that the worktree is owned by an external tool — /finish then
+  # merges from the main repo and leaves worktree + branch in place.
+  [[ "${HERE:-0}" == "1" ]] && bd_update_notes_replace_prefix "$BD_ID" "worktree:" "worktree: external $WORKTREE"
 fi
 ```
 
@@ -129,7 +148,7 @@ The branch lock lives in the bd notes field; bd is the source of truth, so no KA
 
 **Mode B** (`mode=kanban`):
 
-- **Note**: insert `branch: <branch>` as a pipe sub-field (before any other markers)
+- **Note**: insert `branch: <branch>` as a pipe sub-field (before any other markers); with `--here` also `worktree: external <path>`
 - **Section**: remove the item from the Backlog table, insert into the In Progress table (top, or by date)
 - Keep the pipe format. Order: `[Spec] · [Plan] · branch: · blocks: · blocked by:`
 
@@ -149,7 +168,7 @@ No plan? → the options are:
 ```
 📋 Kanban: #<id> → In Progress
 Branch: <branch>
-Worktree: <path>
+Worktree: <path>                              # with --here: "<path> (adopted — owned by your worktree tool; /finish leaves it in place)"
 Plan: <plan-path> (or "not present — see recommendations above")
 Testable surface: <comma-separated paths>   # only when spec says testable-surface != none — /finish will block close without tests
 Sub-items: <picked-strategy>                  # only when subitems: true was resolved in step 2.5
@@ -167,6 +186,8 @@ Next steps:
 - **Branch already exists**: the skill reports an error, /pickup aborts
 - **Spec missing for a feature**: warning, not abort — the user can proceed if they know what they're doing
 - **Pre-existing dirty files in the main repo**: the worktree skill handles it (warning but no block, since the worktree is isolated)
+- **`--here` on the main checkout / default branch or a detached HEAD**: error — create or enter a feature worktree first (your tool's card, `wt switch --create`, `/work-on`)
+- **`--here` inside an EnterWorktree session**: allowed — it is a worktree like any other; `/finish` then follows its EnterWorktree path (5a) because the session owns that worktree
 
 ## What it doesn't do
 

@@ -5,7 +5,7 @@
 # effects, no system reads — deterministic and unit-testable.
 #
 # Emitted vars: MODE (local|parallel), ID, SUFFIX, PARALLEL, LOCAL, USE_RECS,
-# DECISIONS, SERIAL, LOOP, PARALLEL_IDS (array — only populated for
+# DECISIONS, SERIAL, LOOP, HERE, PARALLEL_IDS (array — only populated for
 # MODE=parallel; empty there means "the whole ready queue").
 #
 # --serial and --loop are modifiers of the subagent-dispatch machinery and
@@ -25,6 +25,7 @@ DECISIONS=""
 USE_RECS=0
 SERIAL=0
 LOOP=0
+HERE=0
 POSITIONAL=()
 prev=""
 
@@ -34,6 +35,7 @@ for arg in "$@"; do
     --parallel)            PARALLEL=1 ;;
     --serial)              SERIAL=1; PARALLEL=1 ;;   # implies --parallel
     --loop)                LOOP=1;   PARALLEL=1 ;;   # implies --parallel
+    --here)                HERE=1 ;;                  # adopt the current worktree (pickup --here); local mode only
     --use-recommendations) USE_RECS=1 ;;
     --decisions)           ;;                    # value is the next arg
     --decisions=*)         DECISIONS="${arg#*=}" ;;
@@ -57,6 +59,10 @@ if [[ -n "$DECISIONS" && "$USE_RECS" -eq 1 ]]; then
 fi
 if [[ "$MODE" == "parallel" && -n "$DECISIONS" ]]; then
   echo "ERROR: --decisions is not supported with --parallel/--serial/--loop — resolve each ticket's decisions first (or pass --use-recommendations)" >&2
+  exit 1
+fi
+if (( HERE )) && (( PARALLEL )); then
+  echo "ERROR: --here adopts the worktree this session is in — it only makes sense for the single-ticket (local) mode, not with --parallel/--serial/--loop" >&2
   exit 1
 fi
 if (( LOOP )) && (( ${#POSITIONAL[@]} > 0 )); then
@@ -87,6 +93,7 @@ echo "USE_RECS=$USE_RECS"
 echo "DECISIONS=$DECISIONS"
 echo "SERIAL=$SERIAL"
 echo "LOOP=$LOOP"
+echo "HERE=$HERE"
 printf 'PARALLEL_IDS=('
 if (( ${#PARALLEL_IDS[@]} > 0 )); then
   for x in "${PARALLEL_IDS[@]}"; do printf '%q ' "$x"; done

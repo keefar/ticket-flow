@@ -161,6 +161,24 @@ test_reject_loop_ids() { assert_rejects "--loop + ids" --loop 12 15; }
 # 19) reject: --serial + --decisions (serial implies parallel)
 test_reject_serial_decisions() { assert_rejects "--serial + --decisions" --serial --decisions 1; }
 
+# 20) --here in local mode → HERE=1, still local, id kept
+test_here_local() {
+  parse_ok 12 --here || return
+  assert_eq "local" "$MODE" "--here → local mode"
+  assert_eq "1" "$HERE" "--here → HERE=1"
+  assert_eq "12" "$ID" "--here → ID kept"
+}
+
+# 21) plain id leaves HERE=0
+test_here_default() {
+  parse_ok 12 || return
+  assert_eq "0" "$HERE" "bare id → HERE=0"
+}
+
+# 22) reject: --here + --parallel / --serial
+test_reject_here_parallel() { assert_rejects "--here + --parallel" --parallel --here 12; }
+test_reject_here_serial()   { assert_rejects "--here + --serial" --serial --here 12; }
+
 test_local_default
 test_local_suffix
 test_parallel_no_id
@@ -180,6 +198,10 @@ test_serial_loop_recs
 test_parallel_defaults_serial_loop
 test_reject_loop_ids
 test_reject_serial_decisions
+test_here_local
+test_here_default
+test_reject_here_parallel
+test_reject_here_serial
 
 echo ""
 echo "=== parse-flow-args.sh tests: $PASS passed, $FAIL failed ==="

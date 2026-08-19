@@ -33,7 +33,7 @@ by the `.ticket-flow` mode flag (source `skills/kanban/bd-helper.sh`):
   ```
 - **Mode B** (`mode=kanban`) — search KANBAN.md (main repo) for `branch: <branch>` in the In Progress section.
 
-Extract ID, title, tag, spec/plan links from the resolved source.
+Extract ID, title, tag, spec/plan links from the resolved source. Also read a `worktree: external <path>` line (Mode A: bd notes; Mode B: KANBAN note sub-field) — it means the worktree was **adopted** via `/ticket-flow:pickup --here` (orca, Conductor, worktrunk, bead-workflow-skills): set `ADOPTED=1`, `WORKTREE=<path>`; 5a and Step 7 branch on it.
 
 **Commit-cwd caveat** (same as `/ticket-flow:implement` Step 1): in an EnterWorktree session, git commits to the **main repo** must run as `cd <main-repo> && git ...` in a single statement, and commits to the **worktree branch** must run from the worktree **root** (not a subdir) — otherwise `git` fails with `.git/index.lock: Operation not permitted`. This bites in Step 6 (KANBAN update). Step 5's merge is stricter still — it cannot run from inside an EnterWorktree session at all (see 5a).
 
@@ -88,6 +88,8 @@ If there is no deploy skill or the change is documentation-only: skip.
 Mandatory pre-merge steps, in this order — then the merge:
 
 **5a. EnterWorktree session? Leave it first — the merge runs from the main-repo session.** In an EnterWorktree session *every* write to the main repo's **working tree** fails with `Operation not permitted` (unlink/create) — with sandbox bypass and via python3 subprocess alike. The Step 1 commit-cwd caveat only covers `.git/index.lock`; a merge also writes the main repo's working tree, so `cd <main-repo> && git merge` cannot work from inside the session. Sequence: commit the worktree branch (from the worktree root) → `ExitWorktree` with `action: keep` (Step 7 still needs the worktree for cleanup) → run the merge from the main-repo session.
+
+**Adopted worktree (`ADOPTED=1`, not an EnterWorktree session):** there is nothing to leave. Commit the branch from the worktree root, then run the merge as one statement from the main repo — `cd <main-repo> && git merge …` with `MAIN_REPO="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"` — and pass `dangerouslyDisableSandbox: true` for that call: the main repo lies outside the session's cwd, and the Claude Code sandbox only allows writes under cwd.
 
 **5b. Verify the commits are on the branch you are about to merge.** Worktree-isolated or dispatched work occasionally lands on the wrong branch — an `isolation: worktree` dispatch that commits straight onto the base branch, or a "cd into the worktree" instruction that silently doesn't hold — and the completion report still reads like success; only this check catches it. Take the sha of the last implementation commit (from the implement report, or `git -C <worktree-path> rev-parse HEAD`) and check:
 
@@ -157,6 +159,7 @@ BD_ID="$(bd_id_for "$ID")"
 if [[ -n "$BD_ID" ]]; then
   # Drop the branch-lock line first (set by /pickup) — finish ends worktree life.
   bd_update_notes_remove_prefix "$BD_ID" "branch:"
+  bd_update_notes_remove_prefix "$BD_ID" "worktree:"   # no-op unless the worktree was adopted (--here)
   # Replace any prior [Verify] pointer (e.g. from an earlier finish attempt).
   # <spec-path> = the path from the note's [Spec] link (see checklist storage above).
   bd_update_notes_replace_prefix "$BD_ID" "[Verify]" "[Verify](<spec-path>#verification)"
@@ -190,6 +193,8 @@ git merge-base --is-ancestor <branch> <target-branch> \
 ```
 
 Why: a merge that ran from the wrong cwd (e.g. still inside a worktree whose branch is already HEAD there) reports "Already up to date" and does nothing — a subsequent `git branch -D` would then delete unmerged work. `git worktree remove` refuses a dirty tree on its own, but the `is-ancestor` check is the only thing standing between a silently failed merge and a force-deleted branch. (Pattern from bead-workflow-skills `/done-with`.)
+
+**Adopted worktree (`ADOPTED=1`):** after the guard passed, **remove nothing** — worktree and branch belong to the external tool (orca card, `wt`, `/done-with`, the user's own `git worktree add`); deleting them behind its back breaks its bookkeeping. Report "worktree <path> left in place (adopted); remove it with your tool when done" and skip the rest of this step.
 
 If the merge skill didn't already do it:
 ```bash

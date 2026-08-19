@@ -4,7 +4,7 @@ A **kanban- or beads-backed** ticket workflow for Claude Code — a spec → pic
 
 - `/ticket-flow:init` — scaffold a project for ticket-flow (run once)
 - `/ticket-flow:spec <id>` — create a spec doc from template; `--auto` drafts the whole spec non-interactively
-- `/ticket-flow:pickup <id>` — phase 1: validate Definition of Ready, create worktree, branch-lock, item → In Progress
+- `/ticket-flow:pickup <id>` — phase 1: validate Definition of Ready, create worktree, branch-lock, item → In Progress; `--here` adopts the worktree/branch you are already in (orca, Conductor, worktrunk, bead-workflow-skills cards) instead of creating one — `finish` then merges from the main repo and leaves that worktree to its owner
 - `/ticket-flow:implement` — phase 2: execute the plan inside the worktree
 - `/ticket-flow:finish` — phase 3: verify, optional deploy, merge to main, item → Testing
 - `/ticket-flow:flow <id>` — orchestrator: `--local` (default — all phases in this session with checkpoints), `--parallel` (work multiple ready tickets at once via worktree-isolated subagents), or `--serial --loop` (unattended queue runner: one subagent at a time, merge + deploy + cleanup per ticket, re-query the ready queue until it is empty; pair with `--use-recommendations`). Subagent reports end in a JSON verdict that `skills/flow/verdict-check.sh` validates before any merge (no merge on prose)
@@ -86,7 +86,7 @@ The plugin operates on these conventions in each project (all scaffolded by `/ti
 | `docs/specs/SPEC-TEMPLATE.md` | Template `/ticket-flow:spec` fills in |
 | `docs/specs/<id>-<slug>.md` | Generated item specs |
 | `docs/superpowers/plans/` | Implementation plans (optional, referenced by `/pickup`) |
-| `.claude/worktrees/` | Worktree directory (auto-created) |
+| `.claude/worktrees/` | Worktree directory (auto-created; with `pickup --here` any external worktree works) |
 
 Quick scaffold for a new project — in Claude Code, from the project root:
 
