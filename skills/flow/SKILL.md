@@ -250,9 +250,16 @@ You are in an isolated git worktree. Implement this ticket end-to-end:
 - On a hard blocker: report it back instead of filing the escalation bead
   yourself (the controller files it).
 
-Report: your branch (`git branch --show-current`), the sha of your last
-commit (`git rev-parse HEAD`), commit count, ACs met (proven/total), the
-residual checklist (if any), any blocker.
+Report: a short prose summary, then — as the LAST thing in your message —
+the VERDICT as one fenced ```json block in exactly this shape (the
+controller machine-checks it; a report without a valid verdict is not
+merged):
+  {"ticket": "<id>", "branch": "<git branch --show-current>",
+   "sha": "<git rev-parse HEAD>", "commits": <n>,
+   "acs": [{"id": "AC1", "status": "proven|residual", "evidence": "<what proves it / why it needs the user>"}, …],
+   "tests": {"typecheck": "green|red|n/a", "suite": "green|red|n/a"},
+   "residual_checklist": ["<step the user must do>", …],
+   "blockers": ["<hard blocker>", …]}
 ```
 
 ### P4a. Agent death (spend limit / stall)
@@ -272,7 +279,8 @@ When all subagents return, present **one** checkpoint — per ticket: branch, co
 
 For each ticket whose subagent succeeded, **one at a time** — never two at once (`main` and `.beads/issues.jsonl` are shared state). A P4 bundle is **one** unit here: one branch, steps 1–3 once, then step 4 per bundled ticket.
 
-1. **Verify the commits are on the expected branch** (mandatory, before any merge attempt): `git branch --contains <sha>` with the last-commit sha from the subagent's report — the expected `worktree-agent-<hash>` branch must appear. `isolation: worktree` dispatches occasionally commit straight onto the base branch instead, and the subagent's report still reads like success; only this check catches it. If the expected branch is missing: `git rebase <target-branch>` run inside that worktree replays the commit onto the right base without losing it — then re-run the check. Do not merge until it passes.
+0. **Verdict gate** (mandatory, before anything else): save the subagent's final message to a file and run `"${CLAUDE_PLUGIN_ROOT}/skills/flow/verdict-check.sh" <file>` — it extracts the fenced ```json verdict, validates it (branch, git sha, non-empty `acs` with `proven|residual` each, proven needs evidence, `tests` present) and prints `BRANCH=… SHA=… PROVEN=… RESIDUAL=… BLOCKERS=…` for `eval`. **Invalid or missing verdict → do not merge on prose.** Treat it like P4a rule 2: inspect the worktree diff, then `SendMessage` the subagent asking for the verdict (worktree still present) or dispatch fresh (worktree gone). `BRANCH`/`SHA` feed step 1, `PROVEN`/`RESIDUAL` feed the gating in step 4, `BLOCKERS>0` goes to step 5. Pattern: Castra's persona verdict — nothing mutates until the verdict validates.
+1. **Verify the commits are on the expected branch** (mandatory, before any merge attempt): `git branch --contains <sha>` with the last-commit sha from the verdict (`SHA`) — the expected `worktree-agent-<hash>` branch must appear. `isolation: worktree` dispatches occasionally commit straight onto the base branch instead, and the subagent's report still reads like success; only this check catches it. If the expected branch is missing: `git rebase <target-branch>` run inside that worktree replays the commit onto the right base without losing it — then re-run the check. Do not merge until it passes.
 2. `cd <main-repo>` — commit dirty `.beads/` yourself, exactly as in `skills/finish/SKILL.md` step 5c: skip when `.beads/` is gitignored (`git check-ignore -q .beads/issues.jsonl`), otherwise `git add` the dirty `.beads/` exports and `git commit -m "chore: bd-Export-Sync vor Merge"` on the target branch — never leave it to the user (a dirty `.beads/` makes every merge refuse with "Your local changes … would be overwritten").
 3. `git merge <worktree-agent-branch>` — on a conflict: stop this ticket, leave it for the user, continue with the rest.
 4. Finish the ticket: run `skills/finish/SKILL.md` steps 6–7 — gating (residual → Testing, none → Done) from the subagent's classification, the state update (bd in Mode A, KANBAN.md in Mode B — never `kanban-render.sh` in the workflow), and worktree cleanup **behind finish Step 7's guard**: first `git -C <main-repo> merge-base --is-ancestor <worktree-agent-branch> <target-branch>` (fails → the merge in step 3 did not land, e.g. it ran from a cwd where that branch was already HEAD and printed "Already up to date" — **stop this ticket, no cleanup, no `-D`**) and `git -C <path> status --porcelain` empty; only then **`git worktree unlock <path>` then `git worktree remove <path>`** — `Agent`-tool worktrees are created *locked* (lock owner = the Claude session), so a plain `git worktree remove` fails until unlocked. Then `git branch -D <worktree-agent-branch>` (safe only because the guard proved containment). On an `Operation not permitted` from the remove, apply finish Step 7's verify-then-escalate rule: `git worktree list` decides (the error is often fake); if the path survives, `python3 -c "import shutil; shutil.rmtree('<path>')"` + `git worktree prune` before deferring.
@@ -288,7 +296,7 @@ One consolidated report — per ticket: Done / Testing (+ residual pointer) / me
 
 ## Serial and loop — summary
 
-`--serial` and `--loop` are **modifiers** of the parallel machinery (they imply `--parallel`; the arg parser emits `SERIAL`/`LOOP`). Everything in P1–P7 applies, with the deltas marked **`--serial`** / **`--loop`** above: ordered set + Testing sweep (P1), deferral instead of batch-stop (P2), In Progress per ticket (P3), one subagent in flight and no subagent deploy (P4), report instead of checkpoint (P5), controller deploy after merge + re-query (P6), extended report (P7). P4a (agent death) and finish Step 7's guard (is-ancestor + clean tree before any `-D`/`remove`) apply unchanged. What stays **outside tf** by design: deploy targets and version bumps, spend/time budgets and wake-up timers, hand-off notes into a personal knowledge vault — that is the caller's (e.g. a personal autopilot skill's) policy layer.
+`--serial` and `--loop` are **modifiers** of the parallel machinery (they imply `--parallel`; the arg parser emits `SERIAL`/`LOOP`). Everything in P1–P7 applies, with the deltas marked **`--serial`** / **`--loop`** above: ordered set + Testing sweep (P1), deferral instead of batch-stop (P2), In Progress per ticket (P3), one subagent in flight and no subagent deploy (P4), report instead of checkpoint (P5), controller deploy after merge + re-query (P6), extended report (P7). P4a (agent death), the P6 verdict gate (`verdict-check.sh` — no merge on prose) and finish Step 7's guard (is-ancestor + clean tree before any `-D`/`remove`) apply unchanged. What stays **outside tf** by design: deploy targets and version bumps, spend/time budgets and wake-up timers, hand-off notes into a personal knowledge vault — that is the caller's (e.g. a personal autopilot skill's) policy layer.
 
 ## What it doesn't do
 

@@ -7,7 +7,7 @@ A **kanban- or beads-backed** ticket workflow for Claude Code — a spec → pic
 - `/ticket-flow:pickup <id>` — phase 1: validate Definition of Ready, create worktree, branch-lock, item → In Progress
 - `/ticket-flow:implement` — phase 2: execute the plan inside the worktree
 - `/ticket-flow:finish` — phase 3: verify, optional deploy, merge to main, item → Testing
-- `/ticket-flow:flow <id>` — orchestrator: `--local` (default — all phases in this session with checkpoints), `--parallel` (work multiple ready tickets at once via worktree-isolated subagents), or `--serial --loop` (unattended queue runner: one subagent at a time, merge + deploy + cleanup per ticket, re-query the ready queue until it is empty; pair with `--use-recommendations`)
+- `/ticket-flow:flow <id>` — orchestrator: `--local` (default — all phases in this session with checkpoints), `--parallel` (work multiple ready tickets at once via worktree-isolated subagents), or `--serial --loop` (unattended queue runner: one subagent at a time, merge + deploy + cleanup per ticket, re-query the ready queue until it is empty; pair with `--use-recommendations`). Subagent reports end in a JSON verdict that `skills/flow/verdict-check.sh` validates before any merge (no merge on prose)
 - `/ticket-flow:kanban` — board maintenance
 - `/ticket-flow:board` — generate a read-only `KANBAN.md` snapshot from bd state (beads mode)
 
@@ -107,6 +107,7 @@ Tests (pure-bash, no framework):
 ```bash
 cd ~/_Code/claude/plugins/ticket-flow
 bash skills/flow/tests/test_flow-parallel.sh
+bash skills/flow/tests/test_verdict-check.sh
 bash skills/kanban/tests/test_bd-helper-roundtrip.sh
 bash skills/kanban/tests/test_intake-pull.sh
 bash skills/init/tests/test_install-routing-claude-md.sh
@@ -137,6 +138,7 @@ ticket-flow is a deliberate cherry-pick from tools that solved one piece each. P
 | Structured escalation issue (Task / What was tried / Root-cause hypothesis / Suggested next step) and model tiers for dispatched agents | a friend's private `/fix-loop` agent-handoff guide (unpublished) | Kept the structured artifact; dropped the silent auto-fix retry loop. Tiers are chosen by task complexity, not by error type. |
 | "Guard first, cleanup second": `git merge-base --is-ancestor` + clean-tree check before any `git worktree remove` / `git branch -d/-D` (`/finish` step 7, `/flow` P6); `WorktreeCreate` hook as the documented way to place worktrees elsewhere | [bead-workflow-skills](https://git.b4mad.industries/goern/bead-workflow-skills) — Christoph Görn (goern), GPL-3.0-or-later; [worktrunk](https://github.com/max-sixty/worktrunk) — max-sixty | bws reads worktrunk's `wt list` JSON and accepts an open PR; tf merges locally, so the check is `is-ancestor` + `status --porcelain`. Pattern only — no code copied, no dependency on `wt`/`herdr`. |
 | `code-explorer` / `code-architect` grounding for `/spec --auto` | feature-dev plugin (Anthropic plugin marketplace) | Optional; falls back to a direct read. |
+| Verdict gate — subagent reports end in a schema-checked JSON verdict, nothing merges on prose (`/flow` P6, `skills/flow/verdict-check.sh`); atomic issue claim as mutex (`bd update --claim` in `bd_set_status`) | [Castra](https://git.b4mad.industries/agentic-forges/castra) — Christoph Görn (goern), GPL-3.0-or-later (persona verdict + issue-label mutex) | Pattern only; tf's verdict is a jq-validated block in the agent report, the mutex is beads' own `--claim`. |
 
 (Some skill files label these `Cherry #n` — numbering from the internal cherry-pick plan: #1 testable-surfaces, #3 discover, #4 knowledge typing, #5 beads backend, #6 sub-items, #7 reference-fork, #8 escalation issue, #9 model tiers.)
 
