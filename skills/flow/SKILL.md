@@ -56,11 +56,13 @@ eval "$PARSED"
 ### 1.5. Where am I? — external worktree detection
 
 ```bash
-eval "$("${CLAUDE_PLUGIN_ROOT}/skills/pickup/detect-worktree.sh")"   # LINKED WORKTREE MAIN_REPO BRANCH TF_OWNED
+eval "$("${CLAUDE_PLUGIN_ROOT}/skills/pickup/detect-worktree.sh")"   # LINKED WORKTREE MAIN_REPO BRANCH TF_OWNED MANAGER
 ```
 
-- `LINKED=1` and `MODE=parallel` (also `--serial`/`--loop`) → **STOP**: the controller must run from the main checkout (`$MAIN_REPO`) — `Agent`-tool worktrees fork from `main`, merges land on `main`; inside an orca card / linked worktree that is the wrong base. Tell the user to open the main-checkout workspace (orca offers it) or `cd $MAIN_REPO`.
-- `LINKED=1`, `MODE=local`, `TF_OWNED=0` → the session sits in an external worktree (orca, Conductor, worktrunk, bws): set `HERE=1` and say so in one line; pickup adopts it (its step 0 does the same detection and the branch-lock check, so an explicit `--here` is never required).
+`MANAGER` (`orca` · `conductor` · `cc` · empty when the tool announces itself nowhere) names the owning tool — use it in the messages below instead of listing the whole field.
+
+- `LINKED=1` and `MODE=parallel` (also `--serial`/`--loop`) → **STOP**: the controller must run from the main checkout (`$MAIN_REPO`) — `Agent`-tool worktrees fork from `main`, merges land on `main`; inside a linked worktree that is the wrong base. Tell the user to `cd $MAIN_REPO`; with `MANAGER=orca` or `conductor`, that tool also offers the main checkout as its own workspace.
+- `LINKED=1`, `MODE=local`, `TF_OWNED=0` → the session sits in a worktree tf does not own (`$MANAGER`, or an unannounced one — worktrunk, bws, a manual `git worktree add`): set `HERE=1` and say so in one line, naming `$MANAGER` when it is set; pickup adopts it (its step 0 does the same detection and the branch-lock check, so an explicit `--here` is never required).
 - `LINKED=1`, `TF_OWNED=1` → STOP: this is a tf worktree of another ticket; run `/flow` from the main checkout.
 
 ### 1.7. Route: parallel mode

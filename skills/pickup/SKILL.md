@@ -27,7 +27,7 @@ Examples:
 Before anything else, find out whether this session already sits in a worktree that some other tool prepared (orca card, Conductor workspace, `wt switch --create`, bead-workflow-skills `/work-on`, a manual `git worktree add`). Creating a *nested* tf worktree there would be wrong in every case, so pickup adopts it — `--here` is implied, no flag needed:
 
 ```bash
-eval "$("${CLAUDE_PLUGIN_ROOT}/skills/pickup/detect-worktree.sh")"   # IN_GIT LINKED WORKTREE MAIN_REPO BRANCH DEFAULT TF_OWNED
+eval "$("${CLAUDE_PLUGIN_ROOT}/skills/pickup/detect-worktree.sh")"   # IN_GIT LINKED WORKTREE MAIN_REPO BRANCH DEFAULT TF_OWNED MANAGER
 if [[ "$LINKED" == "1" ]]; then
   if [[ "$TF_OWNED" == "1" ]]; then
     echo "STOP: you are inside a tf worktree ($WORKTREE) — it is bound to another ticket; run pickup from the main checkout ($MAIN_REPO)"; exit 1
@@ -35,11 +35,11 @@ if [[ "$LINKED" == "1" ]]; then
   # external worktree: adopt it unless its branch is already locked to another ticket
   OTHER="$(bd list --json 2>/dev/null | jq -r --arg b "$BRANCH" '.[] | select((.notes // "") | test("(^|\\n)branch: " + $b + "$")) | .id' | head -1)"
   [[ -n "$OTHER" && "$OTHER" != "$BD_ID" ]] && { echo "STOP: branch $BRANCH is already locked to $OTHER"; exit 1; }
-  HERE=1; echo "↳ adopting external worktree $WORKTREE (branch $BRANCH) — no new worktree will be created"
+  HERE=1; echo "↳ adopting ${MANAGER:-external} worktree $WORKTREE (branch $BRANCH) — no new worktree will be created"
 fi
 ```
 
-(Mode B: the same lock check against `branch: <branch>` in KANBAN.md's In Progress section.) Detection is pure git — linked worktree = `git-dir ≠ git-common-dir`; `TF_OWNED` = the worktree lives under `<main>/.claude/worktrees/`. An explicit `--here` on the main checkout still errors (see step 3+4 guards).
+(Mode B: the same lock check against `branch: <branch>` in KANBAN.md's In Progress section.) Detection is pure git — linked worktree = `git-dir ≠ git-common-dir`; `TF_OWNED` = the worktree lives under `<main>/.claude/worktrees/`. `MANAGER` names the owning tool when it announces itself (`orca`, `conductor`, `cc` for a Claude Code worktree, empty for a plain `git worktree add`); use it in messages instead of enumerating the field. An explicit `--here` on the main checkout still errors (see step 3+4 guards).
 
 ### 1. Read the item — mode-aware
 
