@@ -136,10 +136,11 @@ The `git worktree remove` here follows Step 7's verify-then-escalate rule (`git 
 **Verification checklist** (when the item goes to Testing) — a concise, *standalone* guide so the user can test without digging through KANBAN/spec:
 
 - One line: *what the item is*, plain language.
-- Numbered steps: the **residual** checks only — exclude anything step 2 marked as already proven.
-- Storage:
-  - **Item has a spec doc** → write it as a `## Verification` section in the spec doc (after Acceptance Criteria). The spec path comes **canonically from the `[Spec]` link** in the item's note (Step 1) — projects lay specs out differently (e.g. `docs/superpowers/specs/…`); the convention `docs/specs/<id>-<slug>.md` is only the fallback when no link exists. Add a `[Verify](<spec-path>#verification)` pointer to the KANBAN Testing-row note.
-  - **Spec-less item** (trivial, inline ACs) → put the (tiny) checklist inline in the KANBAN Testing-row note.
+- Numbered steps: the **residual** checks only — exclude anything step 2 marked as already proven. Each step is self-explanatory without prior context: *what to do → what to look for → what would count as a failure*. No "see above", no chat-history references, no bare issue IDs as the only pointer.
+- Storage — **in beads mode the checklist belongs in the issue DESCRIPTION**, as a section headed with the word "verify"/"verifizieren" (e.g. `## ✅ Zu verifizieren (Chris)`), placed at the very top, followed by the numbered list. Dashboards render the "what to verify" column from that section (the vault renderer `scripts/project-hub/beads.py:_verify_snippet` prefers it over notes, up to 700 chars); a `[Verify]` notes line is a legacy fallback only. Write it with `bd update <id> --description=…` passing the FULL new text (description updates replace — read the current one first so nothing is lost).
+  - **Item has a spec doc** → the long-form procedure may additionally live as a `## Verification` section in the spec (after Acceptance Criteria), with the description section carrying the short numbered steps plus a `[Spec]` link. The spec path comes **canonically from the `[Spec]` link** in the item's note (Step 1) — projects lay specs out differently (e.g. `docs/superpowers/specs/…`); the convention `docs/specs/<id>-<slug>.md` is only the fallback when no link exists.
+  - **Mode B / KANBAN.md projects** (no bd description field) → keep the (tiny) checklist inline in the KANBAN Testing-row note, same self-explanatory numbering.
+- **Bundle across items**: when several Testing items are verified by the same real-world run, say so in the chat summary ("run 1 covers X, Y, Z") instead of listing each item separately — the user should not repeat one measurement three times.
 
 **State update (mode-aware):**
 
@@ -167,7 +168,7 @@ if [[ -n "$BD_ID" ]]; then
 fi
 ```
 
-When a residual exists, `[Verify]` lives in the bd notes field alongside any other long-lived metadata. The notes-replace pattern preserves anything that's *not* prefixed `branch:` or `[Verify]`. When fully proven, the bd issue is closed. bd is the source of truth — there is no KANBAN.md to refresh and no render; `bd compact` (or `bd list --status=closed`) handles long-term storage. The `KANBAN-done.md` archive remains a Mode-B-only concept. A static board snapshot, if wanted, is `/ticket-flow:board`.
+When a residual exists, the **numbered checklist lives in the issue description** (see "Verification checklist" above — that is what dashboards render); the `[Verify]` notes line stays only as a short pointer/legacy marker. The notes-replace pattern preserves anything that's *not* prefixed `branch:` or `[Verify]`. When fully proven, the bd issue is closed. bd is the source of truth — there is no KANBAN.md to refresh and no render; `bd compact` (or `bd list --status=closed`) handles long-term storage. The `KANBAN-done.md` archive remains a Mode-B-only concept. A static board snapshot, if wanted, is `/ticket-flow:board`.
 
 **Mode B** (`mode=kanban`):
 
