@@ -14,7 +14,7 @@
 # Output is shown to Claude as a postToolUse system-reminder.
 #
 # Install:
-#   cp ~/_Code/claude/plugins/ticket-flow/hooks/research-first-on-toolerror.sh \
+#   cp <plugin-dir>/hooks/research-first-on-toolerror.sh \
 #      ~/.claude/hooks/research-first-on-toolerror.sh
 #   chmod +x ~/.claude/hooks/research-first-on-toolerror.sh
 #
@@ -24,13 +24,13 @@
 #       "hooks": [
 #         {
 #           "type": "command",
-#           "command": "/Users/chris/.claude/hooks/research-first-on-toolerror.sh",
+#           "command": "$HOME/.claude/hooks/research-first-on-toolerror.sh",
 #           "timeout": 5
 #         }
 #       ]
 #     }
-#   (Add as a separate entry alongside the existing omni --post-hook entry,
-#   not replacing it. Multiple matcher-Bash entries are allowed.)
+#   (Add as a separate entry next to any existing PostToolUse/Bash hooks,
+#   not replacing them. Multiple matcher-Bash entries are allowed.)
 
 set -u
 

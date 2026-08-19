@@ -23,9 +23,18 @@ Behaviour:
     treated as user-set and left alone (per the hooks doc).
   - Never blocks, never fails loudly: any error → exit 0 without output.
 
+Install (draft — not auto-installed by the plugin):
+  cp <plugin-dir>/hooks/session-title.py ~/.claude/hooks/session-title.py
+  chmod +x ~/.claude/hooks/session-title.py
+  and add to ~/.claude/settings.json, once under "SessionStart" and once under
+  "UserPromptSubmit":
+    { "hooks": [ { "type": "command",
+        "command": "/usr/bin/env python3 $HOME/.claude/hooks/session-title.py",
+        "timeout": 10 } ] }
+  Settings edits are picked up by Claude Code's file watcher — no restart.
+
 Disable: remove the two hook entries, or set CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1
 (that switches CC's whole title loop off, including this title).
-Copy of this file ships as a draft in the ticket-flow plugin (hooks/session-title.py).
 """
 import json
 import os
