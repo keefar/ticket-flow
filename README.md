@@ -4,14 +4,22 @@ A **kanban- or beads-backed** ticket workflow for Claude Code — a spec → pic
 
 - `/ticket-flow:init` — scaffold a project for ticket-flow (run once)
 - `/ticket-flow:spec <id>` — create a spec doc from template; `--auto` drafts the whole spec non-interactively
-- `/ticket-flow:pickup <id>` — phase 1: validate Definition of Ready, create worktree, branch-lock, item → In Progress; `--here` adopts the worktree/branch you are already in (orca, Conductor, worktrunk, bead-workflow-skills cards) instead of creating one — and pickup/flow detect such a worktree on their own (`skills/pickup/detect-worktree.sh`), so the flag is only needed to be explicit — `finish` then merges from the main repo and leaves that worktree to its owner
+- `/ticket-flow:pickup <id>` — phase 1: validate Definition of Ready, create a worktree, set the branch lock, claim the item (atomic `bd update --claim` in beads mode) → In Progress. Already inside a worktree another tool made (orca card, Conductor, worktrunk, bead-workflow-skills)? pickup detects it and **adopts** it instead of nesting one (`--here` makes that explicit); `finish` then merges from the main repo and leaves the worktree to its owner
 - `/ticket-flow:implement` — phase 2: execute the plan inside the worktree
-- `/ticket-flow:finish` — phase 3: verify, optional deploy, merge to main, item → Testing
+- `/ticket-flow:finish` — phase 3: verify (typecheck/tests, testable-surface gate, proven vs. residual), optional deploy, merge to main behind a merge guard (`merge-base --is-ancestor` + clean tree before anything is deleted), item → Testing with a verification checklist — or straight to Done when nothing residual remains
 - `/ticket-flow:flow <id>` — orchestrator: `--local` (default — all phases in this session with checkpoints), `--parallel` (work multiple ready tickets at once via worktree-isolated subagents), or `--serial --loop` (unattended queue runner: one subagent at a time, merge + deploy + cleanup per ticket, re-query the ready queue until it is empty; pair with `--use-recommendations`). Subagent reports end in a JSON verdict that `skills/flow/verdict-check.sh` validates before any merge (no merge on prose)
 - `/ticket-flow:kanban` — board maintenance
 - `/ticket-flow:board` — generate a read-only `KANBAN.md` snapshot from bd state (beads mode)
 
-Setup & maintenance: `/ticket-flow:bd-detox`, `/ticket-flow:discover`, `/ticket-flow:status`, `/ticket-flow:publish`, `/ticket-flow:push`.
+Setup & maintenance: `/ticket-flow:bd-detox`, `/ticket-flow:discover`, `/ticket-flow:status` (diagnose the project and recommend the next action — also the recovery entry after a lost session), `/ticket-flow:publish`, `/ticket-flow:push`.
+
+```
+spec ──► pickup ──► implement ──► finish ──► Testing / Done
+          │            │            │
+          │ worktree   │ plan,      │ verify → merge guard → merge → cleanup
+          │ + claim    │ commits    │ (residual? → Testing + checklist)
+          └──────────── /ticket-flow:flow <id> ────────────┘   (--parallel | --serial --loop)
+```
 
 Optional hooks (drafts in `hooks/`, **not auto-installed** — each file's header says how): `session-title.py` names the terminal tab `<project> · <bead-id>` (Claude Code adds its busy/idle glyph) via `hookSpecificOutput.sessionTitle` on SessionStart/UserPromptSubmit; `research-first-on-toolerror.sh` injects a research-first reminder when a Bash call looks like a failure.
 
@@ -124,7 +132,7 @@ ticket-flow owns the *ticket mechanics*: ready-queue, Definition of Ready, spec 
 - **Deploy targets, version bumps, release policy** — `finish` has a project deploy step and `--serial` lets the controller deploy the merged branch, but *what* "deploy" means is your project's CLAUDE.md or deploy skill.
 - **Budgets and wake-up timers** — tf has no clock; an unattended `--serial --loop` run stops when the queue is empty or a ticket blocks. Spend/time limits and re-launch timers are the caller's policy (e.g. a personal "autopilot" skill that wraps `/ticket-flow:flow`).
 - **Knowledge vaults, hand-off notes, dashboards** — tf writes its state into the tracker (bd descriptions carry the verification checklists, escalation issues carry the four-section report). Anything that mirrors that state into Obsidian, Notion, a wiki or a hand-off note is a *consumer* of bd/KANBAN.md and lives outside the plugin. That keeps tf installable without any of it.
-- **Terminal multiplexers / tab labels** — the optional `session-title.py` hook uses Claude Code's own `sessionTitle` channel; tf does not depend on herdr, worktrunk, tmux or zellij.
+- **Terminal multiplexers, worktree managers, tab labels** — tf works inside whatever made the worktree (orca, Conductor, worktrunk, bead-workflow-skills, plain `git worktree add`) by adopting it, and uses Claude Code's own `sessionTitle` channel for the optional tab title; it does not depend on herdr, worktrunk, tmux or zellij.
 
 ## Credits
 
