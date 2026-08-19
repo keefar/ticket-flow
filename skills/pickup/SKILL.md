@@ -115,7 +115,10 @@ via `/ticket-flow:board`:
 source "${CLAUDE_PLUGIN_ROOT}/skills/kanban/bd-helper.sh"
 BD_ID="$(bd_id_for "$ID")"
 if [[ -n "$BD_ID" ]]; then
-  bd_set_status "$BD_ID" in_progress
+  bd_set_status "$BD_ID" in_progress || {
+    # in_progress CLAIMS the issue (bd update --claim): non-zero means someone
+    # else holds it — stop here, do not create a worktree for a taken bead.
+    echo "STOP: $BD_ID is claimed by another assignee ($(bd show "$BD_ID" --json | jq -r '.[0].assignee // "?"')) — pick another item or coordinate"; exit 1; }
   # Replace any existing `branch: …` line in notes with the new one; preserves
   # other notes (e.g. [Verify] pointers from prior /finish runs on this id).
   bd_update_notes_replace_prefix "$BD_ID" "branch:" "branch: $BRANCH"

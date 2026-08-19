@@ -207,8 +207,11 @@ Before dispatch, the **controller** moves every ticket Backlog → In Progress �
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/skills/kanban/bd-helper.sh"
 # per ticket:
-BD_ID="$(bd_id_for "$ID")"; bd_set_status "$BD_ID" in_progress
+BD_ID="$(bd_id_for "$ID")"; bd_set_status "$BD_ID" in_progress \
+  || { echo "STOP: $BD_ID is claimed by another assignee — skip it"; continue; }   # --claim = atomic mutex
 ```
+
+`bd_set_status in_progress` **claims** the issue (`bd update --claim`, atomic, idempotent for the same user); a non-zero return means another session/assignee holds it — skip that ticket (`--loop`: report it as taken), never dispatch on a bead someone else is working.
 
 **Mode B** (`mode=kanban`) — per ticket, move the row Backlog → In Progress in KANBAN.md (same edit `/ticket-flow:pickup` step 5 Mode B does).
 
