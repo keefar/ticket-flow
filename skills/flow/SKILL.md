@@ -53,6 +53,16 @@ PARSED="$("${CLAUDE_PLUGIN_ROOT}/skills/flow/parse-flow-args.sh" "$@")" || exit 
 eval "$PARSED"
 ```
 
+### 1.5. Where am I? — external worktree detection
+
+```bash
+eval "$("${CLAUDE_PLUGIN_ROOT}/skills/pickup/detect-worktree.sh")"   # LINKED WORKTREE MAIN_REPO BRANCH TF_OWNED
+```
+
+- `LINKED=1` and `MODE=parallel` (also `--serial`/`--loop`) → **STOP**: the controller must run from the main checkout (`$MAIN_REPO`) — `Agent`-tool worktrees fork from `main`, merges land on `main`; inside an orca card / linked worktree that is the wrong base. Tell the user to open the main-checkout workspace (orca offers it) or `cd $MAIN_REPO`.
+- `LINKED=1`, `MODE=local`, `TF_OWNED=0` → the session sits in an external worktree (orca, Conductor, worktrunk, bws): set `HERE=1` and say so in one line; pickup adopts it (its step 0 does the same detection and the branch-lock check, so an explicit `--here` is never required).
+- `LINKED=1`, `TF_OWNED=1` → STOP: this is a tf worktree of another ticket; run `/flow` from the main checkout.
+
 ### 1.7. Route: parallel mode
 
 **If `MODE` is `parallel`** (also set by `--serial`/`--loop`) → steps 1.6–7 below do not apply (they are the single-ticket path). Jump to **## Parallel mode (`--parallel`)** at the end of this skill; `SERIAL`/`LOOP` select the deltas marked there.

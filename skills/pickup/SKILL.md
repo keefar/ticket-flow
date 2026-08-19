@@ -22,6 +22,25 @@ Examples:
 
 ## Steps
 
+### 0. Where am I? — auto-adopt an external worktree
+
+Before anything else, find out whether this session already sits in a worktree that some other tool prepared (orca card, Conductor workspace, `wt switch --create`, bead-workflow-skills `/work-on`, a manual `git worktree add`). Creating a *nested* tf worktree there would be wrong in every case, so pickup adopts it — `--here` is implied, no flag needed:
+
+```bash
+eval "$("${CLAUDE_PLUGIN_ROOT}/skills/pickup/detect-worktree.sh")"   # IN_GIT LINKED WORKTREE MAIN_REPO BRANCH DEFAULT TF_OWNED
+if [[ "$LINKED" == "1" ]]; then
+  if [[ "$TF_OWNED" == "1" ]]; then
+    echo "STOP: you are inside a tf worktree ($WORKTREE) — it is bound to another ticket; run pickup from the main checkout ($MAIN_REPO)"; exit 1
+  fi
+  # external worktree: adopt it unless its branch is already locked to another ticket
+  OTHER="$(bd list --json 2>/dev/null | jq -r --arg b "$BRANCH" '.[] | select((.notes // "") | test("(^|\\n)branch: " + $b + "$")) | .id' | head -1)"
+  [[ -n "$OTHER" && "$OTHER" != "$BD_ID" ]] && { echo "STOP: branch $BRANCH is already locked to $OTHER"; exit 1; }
+  HERE=1; echo "↳ adopting external worktree $WORKTREE (branch $BRANCH) — no new worktree will be created"
+fi
+```
+
+(Mode B: the same lock check against `branch: <branch>` in KANBAN.md's In Progress section.) Detection is pure git — linked worktree = `git-dir ≠ git-common-dir`; `TF_OWNED` = the worktree lives under `<main>/.claude/worktrees/`. An explicit `--here` on the main checkout still errors (see step 3+4 guards).
+
 ### 1. Read the item — mode-aware
 
 The path is decided by the `.ticket-flow` mode flag (source
@@ -85,7 +104,7 @@ Missing spec or frontmatter (Mode B / spec-less items): skip this step silently.
 
 ### 3+4 with `--here` — adopt the current worktree (skip the two steps below)
 
-When `--here` is passed, no worktree is created and no branch name is built — the session is already inside the worktree an external tool (orca card, Conductor workspace, `wt switch --create`, bead-workflow-skills `/work-on`, a manual `git worktree add`) prepared:
+When `--here` is passed **or step 0 detected an external worktree**, no worktree is created and no branch name is built — the session is already inside the worktree an external tool (orca card, Conductor workspace, `wt switch --create`, bead-workflow-skills `/work-on`, a manual `git worktree add`) prepared:
 
 ```bash
 WORKTREE="$(git rev-parse --show-toplevel)"                         # this worktree's root
