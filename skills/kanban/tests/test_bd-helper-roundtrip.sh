@@ -155,6 +155,16 @@ for state in inbox backlog in_progress testing; do
   done
 done
 
+# 4b. in_progress claims the issue (atomic mutex) — assignee set, second call idempotent
+bd_set_status "$BD_ID" in_progress
+__BD_LIST_CACHE=""
+ASSIGNEE="$(bd show "$BD_ID" --json 2>/dev/null | jq -r '.[0].assignee // ""')"
+if [[ -n "$ASSIGNEE" ]]; then PASS=$((PASS+1)); else FAIL=$((FAIL+1)); FAILED_TESTS+=("bd_set_status in_progress: assignee should be set (claim)"); fi
+if bd_set_status "$BD_ID" in_progress; then PASS=$((PASS+1)); else FAIL=$((FAIL+1)); FAILED_TESTS+=("bd_set_status in_progress: second claim by the same user should be idempotent"); fi
+__BD_LIST_CACHE=""
+STATUS_NOW="$(bd show "$BD_ID" --json 2>/dev/null | jq -r '.[0].status // ""')"
+assert_eq "in_progress" "$STATUS_NOW" "bd_set_status in_progress: status in_progress after claim"
+
 # 5. bd_set_status done → non-zero (caller must use `bd close`)
 if bd_set_status "$BD_ID" done 2>/dev/null; then
   FAIL=$((FAIL+1))

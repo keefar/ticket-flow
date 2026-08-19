@@ -234,7 +234,11 @@ bd_set_status() {
       bd update "$bd_id" --remove-label inbox --remove-label in-progress --remove-label testing --add-label backlog --status=open >/dev/null 2>&1
       ;;
     in_progress)
-      bd update "$bd_id" --remove-label inbox --remove-label backlog --remove-label testing --add-label in-progress --status=in_progress >/dev/null 2>&1
+      # --claim = beads' atomic mutex: sets assignee to the current user and
+      # status to in_progress; idempotent for the same user, FAILS when the
+      # issue is claimed by someone else — callers (pickup, flow) must treat a
+      # non-zero return as "stop, this bead is taken", never as a soft warning.
+      bd update "$bd_id" --remove-label inbox --remove-label backlog --remove-label testing --add-label in-progress --claim >/dev/null 2>&1
       ;;
     testing)
       bd update "$bd_id" --remove-label inbox --remove-label backlog --remove-label in-progress --add-label testing --status=open >/dev/null 2>&1
