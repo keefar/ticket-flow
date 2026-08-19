@@ -9,6 +9,21 @@
 #   BRANCH      current branch ("" = detached HEAD)
 #   DEFAULT     default branch name (origin/HEAD → "main" fallback)
 #   TF_OWNED    1|0   the worktree lives under <main>/.claude/worktrees/ (created by tf / EnterWorktree / Agent tool)
+#   MANAGER     which worktree tool this session runs under, for messages that
+#               would otherwise have to enumerate the whole field:
+#                 cc         a Claude Code worktree (TF_OWNED — EnterWorktree / Agent tool)
+#                 orca       ORCA_WORKTREE_ID / ORCA_WORKSPACE_ID
+#                 conductor  CONDUCTOR_WORKSPACE_PATH / CONDUCTOR_WORKSPACE_NAME
+#                 ""         no marker: plain `git worktree add`, or a tool that
+#                            announces itself nowhere. worktrunk is deliberately
+#                            absent — its WORKTRUNK_* variables are user-set config
+#                            overrides and its shell-wrapper variables mean
+#                            "worktrunk is installed", not "it owns this worktree".
+#               Path evidence beats env evidence: env is inherited by every child
+#               process, so an ORCA_* marker survives into a Claude Code worktree
+#               entered from an orca card — there, cc is the owner. MANAGER says
+#               nothing about LINKED; combine the two (LINKED=0 + MANAGER=orca is
+#               an orca card sitting on the main checkout).
 #
 # Used by /ticket-flow:pickup (auto-adopt an external worktree — orca card,
 # Conductor, worktrunk, bead-workflow-skills — instead of nesting a new one)
@@ -18,8 +33,16 @@ set -u
 
 emit() { printf '%s=%q\n' "$1" "$2"; }
 
+# Env markers only — the caller adds the path evidence (TF_OWNED), which wins.
+env_manager() {
+  if   [[ -n "${ORCA_WORKTREE_ID:-}${ORCA_WORKSPACE_ID:-}" ]]; then echo orca
+  elif [[ -n "${CONDUCTOR_WORKSPACE_PATH:-}${CONDUCTOR_WORKSPACE_NAME:-}" ]]; then echo conductor
+  fi
+}
+
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   emit IN_GIT 0; emit LINKED 0; emit WORKTREE ""; emit MAIN_REPO ""; emit BRANCH ""; emit DEFAULT ""; emit TF_OWNED 0
+  emit MANAGER "$(env_manager)"
   exit 0
 fi
 
@@ -42,6 +65,9 @@ case "$WORKTREE" in
   "$MAIN_REPO"/.claude/worktrees/*) TF_OWNED=1 ;;
 esac
 
+MANAGER=cc
+[[ "$TF_OWNED" == "1" ]] || MANAGER="$(env_manager)"
+
 emit IN_GIT 1
 emit LINKED "$LINKED"
 emit WORKTREE "$WORKTREE"
@@ -49,4 +75,5 @@ emit MAIN_REPO "$MAIN_REPO"
 emit BRANCH "$BRANCH"
 emit DEFAULT "$DEFAULT"
 emit TF_OWNED "$TF_OWNED"
+emit MANAGER "$MANAGER"
 exit 0
