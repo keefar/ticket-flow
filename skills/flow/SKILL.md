@@ -194,7 +194,20 @@ In **Mode B** (`mode=kanban`) the original KANBAN.md → Testing wording is corr
 
 `--parallel` works **multiple independent tickets at once** — one worktree-isolated subagent per ticket, dispatched from this (the controller) session. Opt-in; the default is unaffected.
 
-**Why a controller + subagents:** the `Agent` tool's `isolation: "worktree"` gives each subagent a real, locked git worktree (`.claude/worktrees/agent-<hash>`, branch `worktree-agent-<hash>`, forked from `main`'s current tip, sharing the object store). One controller session coordinates, and the controller serializes the merges so they never race.
+**Why a controller + subagents:** the `Agent` tool's `isolation: "worktree"` gives each subagent a real, locked git worktree (`.claude/worktrees/agent-<hash>`, branch `worktree-agent-<hash>`, sharing the object store). One controller session coordinates, and the controller serializes the merges so they never race.
+
+**Where the worktree forks from is a setting, not a given.** Claude Code resolves `worktree.baseRef` to `origin/<default-branch>` unless told otherwise — *not* your local tip. This workflow deliberately never pushes, so with the default every dispatched agent forks off a base that is as many commits behind as you have merged since the last push. The merge still succeeds; the earlier tickets' work is simply absent from the later worktree. Step P0 refuses to dispatch in that state.
+
+### P0. Preflight — dispatch base
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/skills/flow/check-worktree-base.sh
+```
+
+Prints `BASE_REF`, `HAS_REMOTE`, `DRIFT`, `VERDICT` and exits non-zero on `VERDICT=fix-settings`.
+
+- `ok` / `no-remote` → continue. A repo without a remote cannot drift; that is the normal case for purely local projects.
+- `fix-settings` → **stop before dispatching.** Add `{"worktree": {"baseRef": "head"}}` to the project's `.claude/settings.json`, then re-run. Do not work around it by pushing — pushing is the user's call (`/ticket-flow:push`), never the orchestrator's.
 
 ### P1. Resolve the ticket set
 

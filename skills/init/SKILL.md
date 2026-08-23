@@ -229,6 +229,16 @@ case "$("$PLUGIN/skills/init/unify-worktree-path.sh" "$ROOT")" in
 esac
 ```
 
+**Pin the worktree base ref** — Claude Code resolves `worktree.baseRef` to `origin/<default-branch>` unless the project says otherwise. ticket-flow never pushes (finish and flow leave commits local, `/ticket-flow:push` is the user's separate step), so with the default every dispatched worktree agent forks from a base that is behind local HEAD by each merge since the last push — the merge succeeds, the earlier work is just missing. init pins it to `head`. Every other key in `.claude/settings.json` is preserved; repeat runs are no-ops. `skills/flow/check-worktree-base.sh` enforces the same invariant at dispatch time.
+
+```bash
+case "$("$PLUGIN/skills/init/set-worktree-baseref.sh" "$ROOT")" in
+  created) CREATED+=(".claude/settings.json (worktree.baseRef=head)") ;;
+  patched) CREATED+=(".claude/settings.json (patched: worktree.baseRef=head)") ;;
+  no-op) ;;  # already pinned — silent
+esac
+```
+
 ## Report
 
 Kanban mode:
