@@ -1,6 +1,6 @@
 {
   "name": "ticket-flow",
-  "description": "Kanban- or beads-backed ticket workflow for Claude Code: /spec → /pickup → /implement → /finish, orchestrated by /flow (--local, --parallel, --spawn), each ticket in its own git worktree.",
+  "description": "Kanban- or beads-backed ticket workflow for Claude Code: /spec \u2192 /pickup \u2192 /implement \u2192 /finish, orchestrated by /flow (--local, --parallel, --serial/--loop), each ticket in its own git worktree.",
   "version": "0.2.0",
   "author": {
     "name": "Christoph Schmid"
