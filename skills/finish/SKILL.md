@@ -102,7 +102,7 @@ If there is no deploy skill or the change is documentation-only: skip.
 
 Mandatory pre-merge steps, in this order — then the merge:
 
-**5a. Worktree-isolated session? Leave it first — the merge runs from the main-repo session.** In such a session (after `EnterWorktree`, or inside a dispatched `isolation: "worktree"` agent) the merge is blocked twice over: the command is **refused before it runs** — `cd <main-repo> && git merge` is rejected with *"this command changes directory to the shared checkout … before running git. Refusing to run it"*, and `git -C <main-repo>` the same — and even past that, writes to the main repo's **working tree** fail with `Operation not permitted` (unlink/create), with sandbox bypass and via python3 subprocess alike. There is nothing to work around here. Sequence: commit the worktree branch (from the worktree root) → `ExitWorktree` with `action: keep` (Step 7 still needs the worktree for cleanup) → run the merge from the main-repo session. A **dispatched** agent does not merge at all — it hands its verdict back and the controller merges (flow P6).
+**5a. Worktree-isolated session? Leave it first — the merge runs from the main-repo session.** In such a session (after `EnterWorktree`, or inside a dispatched `isolation: "worktree"` agent) the merge is blocked twice over: the command is **refused before it runs** — `cd <main-repo> && git merge` is rejected with *"this command changes directory to the shared checkout … before running git. Refusing to run it"*, and `git -C <main-repo>` the same — and even past that, writes to the main repo's **working tree** fail with `Operation not permitted` (unlink/create), with sandbox bypass and via python3 subprocess alike. There is nothing to work around here. Sequence: commit the worktree branch (from the worktree root) → `ExitWorktree` with `action: "keep"` → run the merge from the main-repo session. `keep`, not `remove`: `remove` deletes the worktree **and its branch**, and the tool refuses it outright while the tree is dirty or the branch carries commits that are not on the original branch — which is exactly the state before the merge. Overriding that with `discard_changes: true` would throw the implementation away. Step 7 picks the disposal back up after the merge. The one case for `action: "remove"` is here too, not later: when there is nothing to merge at all — finish aborts before the merge, or the branch carries no commits of its own — `remove` disposes of worktree and branch on the spot, and Step 7 is done with it. A **dispatched** agent does not merge at all — it hands its verdict back and the controller merges (flow P6).
 
 **Adopted worktree (`ADOPTED=1`) — a normal session, not an isolated one:** the refusal above does not apply and there is nothing to leave. Commit the branch from the worktree root, then run the merge as one statement from the main repo — `cd <main-repo> && git merge …` with `MAIN_REPO="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"` — and pass `dangerouslyDisableSandbox: true` for that call: the main repo lies outside the session's cwd, and the Claude Code sandbox only allows writes under cwd.
 
@@ -140,7 +140,7 @@ git worktree remove <worktree-path>
 git branch -d <branch>
 ```
 
-The `git worktree remove` here follows Step 7's verify-then-escalate rule (`git worktree list` after the error, always).
+The `git worktree remove` here follows Step 7's verify-then-defer rule (`git worktree list` after the error, always).
 
 ### 6. Gating, verification checklist + KANBAN.md update
 
@@ -198,7 +198,7 @@ Plus, if a bug log is warranted (multiple hypotheses, algorithmic fix, regressio
 
 ### 7. Worktree cleanup
 
-**Guard first, cleanup second** — two pre-conditions, checked from the main-repo root **before** any `git worktree remove` / `git branch -d` / `git branch -D` in this step (including the escalation path below). Both are mandatory; if either fails, **stop: touch neither worktree nor branch**, report, and leave the worktree standing for inspection:
+**Guard first, cleanup second** — two pre-conditions, checked from the main-repo root **before** any `git worktree remove` / `git branch -d` / `git branch -D` in this step (including the commands handed to the user further down). Both are mandatory; if either fails, **stop: touch neither worktree nor branch**, report, and leave the worktree standing for inspection:
 
 ```bash
 git merge-base --is-ancestor <branch> <target-branch> \
@@ -210,6 +210,15 @@ git merge-base --is-ancestor <branch> <target-branch> \
 Why: a merge that ran from the wrong cwd (e.g. still inside a worktree whose branch is already HEAD there) reports "Already up to date" and does nothing — a subsequent `git branch -D` would then delete unmerged work. `git worktree remove` refuses a dirty tree on its own, but the `is-ancestor` check is the only thing standing between a silently failed merge and a force-deleted branch. (Pattern from bead-workflow-skills `/done-with`.)
 
 **Adopted worktree (`ADOPTED=1`):** after the guard passed, **remove nothing** — worktree and branch belong to the external tool (orca card, `wt`, `/done-with`, the user's own `git worktree add`); deleting them behind its back breaks its bookkeeping. Report "worktree <path> left in place (adopted); remove it with your tool when done" and skip the rest of this step.
+
+**`--local` — a worktree *this* session created: the disposal decision belongs to Step 5a.** When `/ticket-flow:pickup` made the worktree with `EnterWorktree` in this session, the harness tracks it and `ExitWorktree` can dispose of it — but only once: the tool acts solely on the worktree this session created, and the **first** call ends that tracking, so a second call is a no-op ("no worktree session is active, takes no action"). It therefore cannot be reached from here; 5a is where the choice is made:
+
+- **Work to merge (the normal path)** → `action: "keep"`, merge from the main-repo session, then remove the worktree with the git commands below. `action: "remove"` at 5a is refused anyway while the branch holds commits that are not on the original branch, and `discard_changes: true` would delete the implementation.
+- **Nothing to merge** — finish aborts before the merge, the ticket is abandoned, or the branch carries no commits of its own → `action: "remove"` at 5a: the harness deletes the worktree directory **and its branch** and restores the working directory in one step. No guard, no `git branch -d`, no removal error to interpret. `discard_changes: true` only after the user confirmed the work is expendable.
+
+Once 5a has run with `keep`, that door is shut — the removal falls to the git commands below, and Step 8 reports what actually happened, never a cleanup that was skipped because `ExitWorktree` silently no-opped.
+
+Everything below is therefore for worktrees this session does **not** own: a dispatched agent's worktree cleaned up by the controller (flow P6), and this session's own worktree after 5a ended the `ExitWorktree` tracking.
 
 If the merge skill didn't already do it:
 ```bash
@@ -225,25 +234,26 @@ git worktree list                     # ← source of truth: is <worktree-path> 
 ```
 
 - **Path gone from `git worktree list`** → fake error, cleanup succeeded anyway. Proceed.
-- **Path still listed** → real error. **Escalate yourself before deferring to the user**:
-
-  ```bash
-  python3 -c "import shutil; shutil.rmtree('<worktree-path>')"  # python3 bypasses the EPERM that blocks git
-  git worktree prune                                            # drop the now-stale registration
-  git branch -d <branch>
-  git worktree list                                             # re-verify
-  ```
-
-  Only if the path *still* appears after this, defer (the guard above has already proven the branch is contained in `<target-branch>` — that is what makes the `-D` safe to hand out):
+- **Path still listed** → real error. **Stop and hand it to the user — never delete the directory yourself.** Forcing the removal (`shutil.rmtree`, `rm -rf`) is precisely the fallback Claude Code removed in 2.1.143, to prevent loss of gitignored or in-progress files. The guard above only proves that the *tracked* commits are contained in `<target-branch>`; it says nothing about what else lives under that path — `.env`, `node_modules`, build caches, an editor's unsaved buffer. A `git worktree remove` that genuinely fails is usually the file system reporting that something still holds the path (a live session, a running process), and that is a reason to look, not to force. The guard has already proven containment, which is what makes handing out the `-D` safe:
 
   ```
-  ⚠️ Worktree cleanup genuinely blocked (survives shutil.rmtree + prune). Run manually
-  from a fresh terminal/session:
+  ⚠️ Worktree cleanup blocked — `git worktree remove` failed and the path is still
+  registered. Run manually from a fresh terminal/session, after checking that
+  nothing you still need lives under it (gitignored files are not covered by the
+  merge check):
     git worktree remove --force .claude/worktrees/<name>
     git branch -D worktree-<name>
+
+  If that says `cannot remove a locked working tree`, the worktree is still
+  locked. `git worktree list` prints the lock reason including the owning pid:
+  if that process is gone, `git worktree unlock .claude/worktrees/<name>` and
+  repeat — if it is alive, a session still has the worktree open and it must be
+  closed first, not forced.
   ```
 
-When `/ticket-flow:flow` runs from a worktree session: leave the worktree first (`ExitWorktree`), then run the cleanup from the main-repo session — "error printed, removal done" is the common path, so pre-emptive deferral is rarely needed.
+**A lock is a different error from `Operation not permitted`** and is never ambiguous: `git worktree remove` refuses a locked worktree outright (`fatal: cannot remove a locked working tree`, git 2.54) and `--force` alone does not override it. A Claude-managed worktree is unlocked when its agent ends, so a lock encountered here means either a live session — leave it alone — or a stale lock from an agent that crashed, in which case `git worktree unlock <path>` (after checking the pid in `git worktree list` is gone) makes the normal removal work.
+
+When `/ticket-flow:flow` runs from a worktree session: leave the worktree first (`ExitWorktree` with `action: "keep"`, per 5a), then run the cleanup from the main-repo session — "error printed, removal done" is the common path, so pre-emptive deferral is rarely needed.
 
 ### 8. Report
 

@@ -12,6 +12,8 @@
 #     "acs": [ {"id": "AC1", "status": "proven",   "evidence": "tests: 12 passed"},
 #              {"id": "AC2", "status": "residual", "evidence": "needs listening test"} ],
 #     "tests": {"typecheck": "green|red|n/a", "suite": "green|red|n/a"},
+#     "review": "high — 2 findings",         # optional: finish step 3's result,
+#                                            # or "not run (<reason>)"
 #     "residual_checklist": ["…"],           # may be empty
 #     "blockers": []                         # may be empty
 #   }
@@ -23,7 +25,10 @@
 #
 # Exit 0 → prints KEY=VALUE lines for `eval` (BRANCH, SHA, TICKET, COMMITS,
 #          ACS_TOTAL, PROVEN, RESIDUAL, BLOCKERS, TESTS_TYPECHECK, TESTS_SUITE,
-#          RESIDUAL_CHECKLIST_N).
+#          RESIDUAL_CHECKLIST_N, REVIEW).
+# REVIEW is reported, not gated: it falls back to "not reported" so an older
+# prompt still validates, while the controller can print what review ran (or
+# that none did) instead of silently implying one happened.
 # Exit 1 → prints "INVALID: <reason>" lines on stderr (one per defect).
 # Exit 2 → usage / jq missing.
 # Requires jq. macOS bash 3.2 compatible. Tested by tests/test_verdict-check.sh.
@@ -79,4 +84,5 @@ emit BLOCKERS  "$(printf '%s' "$json" | jq -r '(.blockers // []) | length')"
 emit TESTS_TYPECHECK "$(printf '%s' "$json" | jq -r '.tests.typecheck // "n/a"')"
 emit TESTS_SUITE     "$(printf '%s' "$json" | jq -r '.tests.suite // "n/a"')"
 emit RESIDUAL_CHECKLIST_N "$(printf '%s' "$json" | jq -r '(.residual_checklist // []) | length')"
+emit REVIEW "$(printf '%s' "$json" | jq -r 'if ((.review // "") | tostring | length) > 0 then (.review | tostring) else "not reported" end')"
 exit 0

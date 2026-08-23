@@ -104,7 +104,7 @@ Quick scaffold for a new project — in Claude Code, from the project root:
 /ticket-flow:init --mode=beads    # non-interactive: beads mode (also migrates an existing KANBAN.md)
 ```
 
-Branch naming: `worktree-<id>-<slug>` (from EnterWorktree) or `<tag>/<id>-<slug>` (manual fallback).
+Branch naming: `worktree-<id>-<slug>` — whatever `EnterWorktree` produced. A worktree adopted from another tool (`pickup --here`) keeps the branch name that tool chose; tf stores the actual name in the item's `branch:` marker instead of assuming a convention.
 
 ## Update workflow
 
@@ -116,6 +116,7 @@ Tests (pure-bash, no framework):
 cd ~/_Code/claude/plugins/ticket-flow
 bash skills/flow/tests/test_flow-parallel.sh
 bash skills/flow/tests/test_verdict-check.sh
+bash skills/flow/tests/test_check-worktree-base.sh
 bash skills/pickup/tests/test_detect-worktree.sh
 bash skills/kanban/tests/test_bd-helper-roundtrip.sh
 bash skills/kanban/tests/test_intake-pull.sh
@@ -148,16 +149,17 @@ ticket-flow is a deliberate cherry-pick from tools that solved one piece each. P
 |---|---|---|
 | `executing-plans`, `subagent-driven-development`, `writing-plans`, `brainstorming`, `using-git-worktrees` (fallback), `finishing-a-development-branch`, `requesting-code-review`, `verification-before-completion`, the parallel-dispatch pattern | [superpowers](https://github.com/obra/superpowers) — Jesse Vincent (obra), MIT | Delegated, not reimplemented; tf picks the mode and supplies ticket context. `--parallel` adds controller-owned, strictly sequential merges. |
 | `mode=beads` backend: dependency graph, ready-computation, atomic claim, `bd remember` | [beads](https://github.com/gastownhall/beads) — Steve Yegge / gastownhall, MIT | Optional backend, never the default. tf ships its own `bd init --agents-template` without the clause that forbids other memory systems, and `/ticket-flow:bd-detox` for projects that already ran vanilla `bd init`. |
-| Testable-surfaces gate (`testable-surface:` frontmatter, enforced in `/finish`), `/ticket-flow:discover` → `docs/PROJECT-CONVENTIONS.md`, spec sub-items | [claude-protocol](https://github.com/weselow/claude-protocol) (weselow; fork of [The-Claude-Protocol](https://github.com/AvivK5498/The-Claude-Protocol)) | Gate applies only to the paths a spec lists; discovery writes a doc instead of injecting rules; sub-items are opt-in per spec. |
+| Testable-surfaces gate (`testable-surface:` frontmatter, enforced in `/finish`), `/ticket-flow:discover` → `.claude/rules/project-conventions.md`, spec sub-items | [claude-protocol](https://github.com/weselow/claude-protocol) (weselow; fork of [The-Claude-Protocol](https://github.com/AvivK5498/The-Claude-Protocol)) | Gate applies only to the paths a spec lists; discovery writes one project rule the harness loads on its own instead of injecting instructions into the user's CLAUDE.md; sub-items are opt-in per spec. |
 | Typed knowledge entries (DECISION / LEARNED / PATTERN / INVESTIGATION / DEVIATION / FACT) for `bd remember` and memory notes | [Lavra](https://github.com/roberto-mello/lavra) — Roberto Mello | The six types; the format rules are tf's. |
 | Structured escalation issue (Task / What was tried / Root-cause hypothesis / Suggested next step) and model tiers for dispatched agents | a friend's private `/fix-loop` agent-handoff guide (unpublished) | Kept the structured artifact; dropped the silent auto-fix retry loop. Tiers are chosen by task complexity, not by error type. |
 | "Guard first, cleanup second": `git merge-base --is-ancestor` + clean-tree check before any `git worktree remove` / `git branch -d/-D` (`/finish` step 7, `/flow` P6); `WorktreeCreate` hook as the documented way to place worktrees elsewhere | [bead-workflow-skills](https://git.b4mad.industries/goern/bead-workflow-skills) — Christoph Görn (goern), GPL-3.0-or-later; [worktrunk](https://github.com/max-sixty/worktrunk) — max-sixty | bws reads worktrunk's `wt list` JSON and accepts an open PR; tf merges locally, so the check is `is-ancestor` + `status --porcelain`. Pattern only — no code copied, no dependency on `wt`/`herdr`. |
 | `code-explorer` / `code-architect` grounding for `/spec --auto` | feature-dev plugin (Anthropic plugin marketplace) | Optional; falls back to a direct read. |
 | Verdict gate — subagent reports end in a schema-checked JSON verdict, nothing merges on prose (`/flow` P6, `skills/flow/verdict-check.sh`); atomic issue claim as mutex (`bd update --claim` in `bd_set_status`) | [Castra](https://git.b4mad.industries/agentic-forges/castra) — Christoph Görn (goern), GPL-3.0-or-later (persona verdict + issue-label mutex) | Pattern only; tf's verdict is a jq-validated block in the agent report, the mutex is beads' own `--claim`. |
+| One verification recipe resolved by the controller before any dispatch and handed to every worker verbatim; `code-review` as a fixed worker step instead of a suggestion (`/flow` P4, reported back in the verdict's `review` field) | Claude Code's built-in `/batch` (Anthropic, 2.1.63) | `/batch` splits a plan-mode task into 5–30 units, dispatches one local background agent per unit and pins the e2e recipe once up front. tf keeps its own unit set (the ready queue), its bundling heuristic and its verdict gate — only "resolve the recipe once, hand it down" and "review is a step, not advice" are picked. |
 
 (Some skill files label these `Cherry #n` — numbering from the internal cherry-pick plan: #1 testable-surfaces, #3 discover, #4 knowledge typing, #5 beads backend, #6 sub-items, #7 reference-fork, #8 escalation issue, #9 model tiers.)
 
-tf-original (for the record): the two-mode `.ticket-flow` flag, the `branch:` lock as the only worktree→ticket back-reference, the decision gate (`## Decisions` → `## Decision Log`), the proven/residual classification with Testing-vs-Done gating, `reference-fork`, the verify-then-escalate worktree cleanup, agent-death recovery (resume vs. fresh decided by worktree existence) and the mandatory initial plan commit.
+tf-original (for the record): the two-mode `.ticket-flow` flag, the `branch:` lock as the only worktree→ticket back-reference, the decision gate (`## Decisions` → `## Decision Log`), the proven/residual classification with Testing-vs-Done gating, `reference-fork`, the verify-then-defer worktree cleanup, agent-death recovery (resume vs. fresh decided by worktree existence) and the mandatory initial plan commit.
 
 Evaluated and not adopted (so you don't have to): Lavra's mandatory multi-phase design pipeline, claude-protocol's "no web before code" rule and approval-free push, Knots' coverage floor, Anthropic's built-in Tasks as a beads replacement, herdr tab labels as a busy/free signal, repackaging as `npx skills add`-style agent skills.
 

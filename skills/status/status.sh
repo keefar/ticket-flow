@@ -184,11 +184,12 @@ fi
 if (( WT_COUNT > 0 )); then
   # An orphaned worktree is the normal aftermath of a subagent that died: the
   # branch still holds the work. Re-entering it is the recovery move, and
-  # EnterWorktree(path=…) is how a session gets back in — paths below
-  # .claude/worktrees/ need no approval. Deleting is the LAST resort, so the
-  # resume hint goes first.
+  # EnterWorktree(path=…) is how a session gets back in. Permission rules are
+  # stored against the repo root, so what the project already allows applies
+  # inside its worktrees too. Deleting is the LAST resort, so the resume hint
+  # goes first.
   RECS+=("$WT_COUNT worktree(s) under .claude/worktrees — resume one with \`EnterWorktree(path=\"${WT_PATHS[0]}\")\`, then \`/ticket-flow:status\` inside it")
-  RECS+=("Review them with \`git worktree list\`; only once a worktree's branch is merged (\`git merge-base --is-ancestor\`) is \`git worktree remove\` safe — an errored --parallel run leaves work behind, not just a stale directory")
+  RECS+=("Only once a worktree's branch is merged (\`git merge-base --is-ancestor\`) is \`git worktree remove\` safe — an errored run leaves work behind, and unmerged work is unrecoverable once the branch is gone")
 fi
 
 if (( BD_IN_PROGRESS > 0 )); then
