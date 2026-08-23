@@ -34,15 +34,18 @@ Resolve the item by the `.ticket-flow` mode flag (source `skills/kanban/bd-helpe
   ```
 - **Mode B** (`mode=kanban`) — search KANBAN.md (in the **main repo**, not the worktree!) for `branch: <branch>` in the In Progress section.
 
-**IMPORTANT in an EnterWorktree session**: all git commits must run as `cd /path/to/main-repo && git ...` in a **single shell statement**. `git -C <path>` alone is NOT enough — the harness session isolation blocks `.git/index.lock` writes outside the worktree path when the process isn't physically there. Commit pattern:
+**IMPORTANT — where a git commit may run depends on the session type.** Two different regimes, do not mix them up:
 
-```bash
-cd <main-repo-path> && git add <files> && git commit -F - <<'COMMIT'
-...
-COMMIT
-```
+- **Worktree-isolated session** — a subagent dispatched with `isolation: "worktree"`, or this session after `EnterWorktree`. Git against the **main repo is refused outright**, in *both* spellings: `cd <main-repo> && git …` and `git -C <main-repo>` are rejected with *"this command changes directory to the shared checkout … before running git. Refusing to run it"*. There is no workaround and no point burning calls on one. Commit to the **worktree branch** only; every main-repo write — ticket state, `.beads/` export commits, the merge — belongs to the controller or a main-repo session. That is exactly how `/ticket-flow:flow --parallel` splits the work (see flow P3/P6: *only the controller ever writes ticket state*).
+- **Non-isolated session inside a worktree** — an external worktree adopted via `/ticket-flow:pickup --here` (orca card, Conductor, worktrunk, bead-workflow-skills) is a normal session that merely happens to sit in a linked worktree. There, main-repo git works, but only as a **single shell statement** with `dangerouslyDisableSandbox: true`:
 
-**Also — committing to the worktree branch itself**: even commits that *do* target the worktree branch must run with cwd = the worktree **root**, not a subdirectory of it. From a subdir, `git commit` fails the same way — `.git/index.lock: Operation not permitted` — because the harness ties index-lock writes to the session's physical cwd. Same root cause as the cross-repo case above, different fix: `cd "$(git rev-parse --show-toplevel)"` (the worktree root) before committing.
+  ```bash
+  cd <main-repo-path> && git add <files> && git commit -F <msg-file>
+  ```
+
+  `git -C <main-repo>` alone is not enough — it hits `.git/index.lock: Operation not permitted`, because the sandbox ties index-lock writes to the process's physical cwd.
+
+**In both regimes — committing to the worktree branch itself**: run with cwd = the worktree **root**, not a subdirectory of it. From a subdir, `git commit` fails with `.git/index.lock: Operation not permitted` for the same physical-cwd reason. Fix: `cd "$(git rev-parse --show-toplevel)"` (the worktree root) before committing.
 
 - Not found: error — "No Kanban item with `branch: <branch>` in In Progress. Run /ticket-flow:pickup first."
 - Found: extract ID, title, tag, plan link
