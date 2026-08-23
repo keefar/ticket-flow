@@ -100,6 +100,16 @@ mkdir -p "$d/.claude/worktrees/wt-1"
 out=$( cd "$d" && "$SCRIPT_UNDER_TEST" 2>&1 )
 grep -q 'IN-FLIGHT:           1 worktree' <<<"$out" && ok "counts in-flight worktrees" \
   || nope "counts in-flight worktrees" "$out"
+grep -qF '.claude/worktrees/wt-1' <<<"$out" && ok "lists the worktree path" \
+  || nope "lists the worktree path" "$out"
+grep -qF 'EnterWorktree(path=' <<<"$out" && ok "offers EnterWorktree(path) as the way back in" \
+  || nope "offers EnterWorktree(path) as the way back in" "$out"
+grep -qF 'merge-base --is-ancestor' <<<"$out" && ok "gates removal on the branch being merged" \
+  || nope "gates removal on the branch being merged" "$out"
+d=$(make_project beads)
+out=$( cd "$d" && "$SCRIPT_UNDER_TEST" 2>&1 )
+grep -qF 'EnterWorktree(path=' <<<"$out" \
+  && nope "no worktree hint when there are none" "$out" || ok "no worktree hint when there are none"
 
 # 9. The harness's own diagnostic is offered, including on a clean project.
 d=$(make_project beads)

@@ -96,8 +96,19 @@ fi
 
 # --- In-flight work ---
 WT_COUNT=0
-[[ -d .claude/worktrees ]] && WT_COUNT="$(find .claude/worktrees -mindepth 1 -maxdepth 1 -type d ! -name '.DS_Store' 2>/dev/null | wc -l | tr -d ' ')"
+declare -a WT_PATHS
+if [[ -d .claude/worktrees ]]; then
+  while IFS= read -r p; do
+    [[ -n "$p" ]] && WT_PATHS+=("$p")
+  done < <(find .claude/worktrees -mindepth 1 -maxdepth 1 -type d ! -name '.DS_Store' 2>/dev/null | sort)
+  WT_COUNT=${#WT_PATHS[@]}
+fi
 printf "IN-FLIGHT:           %d worktree(s) under .claude/worktrees\n" "$WT_COUNT"
+if (( WT_COUNT > 0 )); then
+  for p in "${WT_PATHS[@]}"; do
+    printf "  %s\n" "$p"
+  done
+fi
 
 # --- Beads ---
 BD_TOTAL=0
@@ -165,7 +176,13 @@ else
 fi
 
 if (( WT_COUNT > 0 )); then
-  RECS+=("$WT_COUNT worktree(s) under .claude/worktrees — \`git worktree list\` to review; a --parallel run that errored can leave stale ones (\`git worktree remove\`)")
+  # An orphaned worktree is the normal aftermath of a subagent that died: the
+  # branch still holds the work. Re-entering it is the recovery move, and
+  # EnterWorktree(path=…) is how a session gets back in — paths below
+  # .claude/worktrees/ need no approval. Deleting is the LAST resort, so the
+  # resume hint goes first.
+  RECS+=("$WT_COUNT worktree(s) under .claude/worktrees — resume one with \`EnterWorktree(path=\"${WT_PATHS[0]}\")\`, then \`/ticket-flow:status\` inside it")
+  RECS+=("Review them with \`git worktree list\`; only once a worktree's branch is merged (\`git merge-base --is-ancestor\`) is \`git worktree remove\` safe — an errored --parallel run leaves work behind, not just a stale directory")
 fi
 
 if (( BD_IN_PROGRESS > 0 )); then
