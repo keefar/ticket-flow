@@ -68,12 +68,22 @@ Before merge:
 
 This classification drives the gating decision and the verification checklist in step 6.
 
-### 3. Review (optional, depending on item size)
+### 3. Review — evidence, not self-assessment
 
-- Trivial bugs/changes (≤50 lines, simple fix): no explicit review step
-- Features or larger changes: `Skill(superpowers:requesting-code-review)` — structured self-review or /ultrareview if the user triggers it
+A self-review by the agent that wrote the code is the weakest form of review there is. Claude Code ships a real one, and it is invocable: `/code-review` at levels `low` through `max` can be started via the `Skill` tool. Use it.
 
-User decides if unsure.
+- **Trivial bugs/changes** (≤50 lines, simple fix): no explicit review step. Unchanged.
+- **Everything else**: `Skill(code-review)` with level `high`. Since 2.1.218 it runs as a background subagent and supports `--fix`. Report its findings in step 8 — an empty result is a result and gets stated as one.
+- **Never `ultra` automatically.** It is `local-jsx`, so the model cannot start it at all, and it bills against usage credits rather than the plan (Pro gets three one-off runs). If a change warrants it, say so in the report and let the user run `/code-review ultra` themselves.
+
+**Fallback — required, not optional.** Availability of `/code-review` depends on a server-side gate, and a dispatched worktree agent runs with a reduced toolset. If the call is unavailable or fails, do **not** fall back to asserting the code is fine. Say plainly that no independent review ran, and hand the user the exact command to run it:
+
+```
+Review: not run (code-review unavailable in this session).
+To review manually:  /code-review high
+```
+
+The point of this step is a claim backed by something. Where that backing is missing, the report says so instead of pretending.
 
 ### 4. Deploy (project-specific)
 
@@ -238,10 +248,13 @@ Standard report (always):
 ✓ Phase 3 for #<id> complete
 
 Merge: <commit-hash>
+Review: <level, findings count>  |  not run (<reason>)
 Deploy: <version> (if a UI change)
 Kanban: #<id> → Testing  (or → Done if gated out — state which, and why)
 Worktree removed: <path>
 ```
+
+The `Review:` line is never omitted. Either an independent review ran and this says which level and what it found, or it did not and this says why — a missing line reads as "reviewed" to everyone downstream.
 
 If **→ Testing**: state the residual in one line + point at the `[Verify]` checklist. Manual test pending — after manual verification: remove the item from Testing in KANBAN.md, append to KANBAN-done.md, optionally create a bug log for lessons learned.
 
