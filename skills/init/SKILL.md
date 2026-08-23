@@ -21,7 +21,7 @@ Sets up a project for ticket-flow. The single entry point for both backends — 
 - `docs/superpowers/plans/.gitkeep` — directory for implementation plans (used by `superpowers:writing-plans`)
 - `.claude/worktrees/` — directory where `/ticket-flow:pickup` creates branch worktrees
 - `.ticket-flow` — mode flag (`mode=kanban` or `mode=beads`)
-- `CLAUDE.md` — appends a marked `Ticket-Flow Routing` block (via `skills/init/install-routing-claude-md.sh`) so planning/ideation prompts route through tf instead of `superpowers:brainstorming`, `superpowers:writing-plans`, or `TodoWrite`. CLAUDE.md is "user instructions" — highest priority in the skill-trigger order. Idempotent via the `<!-- ticket-flow:routing -->` marker.
+- `.claude/rules/ticket-flow-routing.md` — the `Ticket-Flow Routing` rule (via `skills/init/install-routing-rule.sh`) so planning/ideation prompts route through tf instead of `superpowers:brainstorming` or `superpowers:writing-plans`. A rule without a `paths:` frontmatter key loads at launch with the same priority as `.claude/CLAUDE.md` ([memory docs](https://code.claude.com/docs/en/memory.md)) — same effect, without writing into the consumer project's own CLAUDE.md. Idempotent (the file's existence is the guard); a routing block left in CLAUDE.md by an older init is removed.
 
 **Kanban-only scaffolding:**
 
@@ -118,15 +118,19 @@ fi
 scaffold_dir  "./.claude/worktrees"
 ```
 
-### 1b. CLAUDE.md routing block
+### 1b. Routing rule
 
-Append a marked `Ticket-Flow Routing` block to `./CLAUDE.md` so any planning, ideation, bug, or change-request prompt routes through tf (`bd create` + `/ticket-flow:spec`) instead of falling back to `superpowers:brainstorming`, `superpowers:writing-plans`, or `TodoWrite`. Runs for both modes. Delegates to `skills/init/install-routing-claude-md.sh`; idempotent via the `<!-- ticket-flow:routing -->` marker.
+Install `.claude/rules/ticket-flow-routing.md` so any planning, ideation, bug, or change-request prompt routes through tf (`bd create` + `/ticket-flow:spec`) instead of falling back to `superpowers:brainstorming` or `superpowers:writing-plans`. Runs for both modes. Delegates to `skills/init/install-routing-rule.sh`.
+
+**Why a rule and not the project's CLAUDE.md**: `.claude/rules/` is the documented place for this. Every `.md` below it is discovered recursively, and a rule *without* a `paths:` frontmatter key is loaded at launch with the same priority as `.claude/CLAUDE.md` — so the routing instruction carries the same weight it did before, while the consumer's own CLAUDE.md stays untouched. It is also the less invasive shape: one file that belongs to tf, trivially overridden or deleted by the user, and no merge conflict with whatever the project already keeps in CLAUDE.md.
+
+**No `TodoWrite` / `TaskCreate` ban**: the old block forbade both. Dead rule — the native task tools are switched off on the current models since CC 2.1.233, so the prohibition protected against nothing while costing context on every launch.
 
 ```bash
-case "$("$PLUGIN/skills/init/install-routing-claude-md.sh")" in
-  created)  CREATED+=("CLAUDE.md (with Ticket-Flow Routing block)") ;;
-  appended) CREATED+=("CLAUDE.md (Ticket-Flow Routing block appended)") ;;
-  no-op) ;;  # marker already present — silent
+case "$("$PLUGIN/skills/init/install-routing-rule.sh")" in
+  created)  CREATED+=(".claude/rules/ticket-flow-routing.md") ;;
+  migrated) CREATED+=(".claude/rules/ticket-flow-routing.md (moved out of CLAUDE.md)") ;;
+  no-op) ;;  # rule already present — silent
 esac
 ```
 
@@ -260,7 +264,7 @@ Kanban mode:
   [created] docs/specs/SPEC-TEMPLATE.md
   [created] docs/superpowers/plans/
   [exists, skipped] .claude/worktrees/
-  [created] CLAUDE.md (with Ticket-Flow Routing block)
+  [created] .claude/rules/ticket-flow-routing.md
 
 Mode: kanban — KANBAN.md is the source of truth.
 To switch to beads mode later: re-run /ticket-flow:init --mode=beads (migrates + flips the flag).
@@ -280,7 +284,7 @@ Beads mode (fresh):
   [set] git config beads.role maintainer
   [created] docs/specs/SPEC-TEMPLATE.md
   [created] docs/superpowers/plans/
-  [created] CLAUDE.md (with Ticket-Flow Routing block)
+  [created] .claude/rules/ticket-flow-routing.md
 
 bd initialized with tf custom template — Auto-Memory + bd remember coexist.
 (Or, with --skip-agents: no AGENTS.md, no BEADS INTEGRATION block in CLAUDE.md.)
@@ -300,7 +304,7 @@ Beads mode (migration from kanban):
   [renamed] KANBAN.md → KANBAN.archived.md
   [created] .ticket-flow (mode=beads)
   [created] .beads/
-  [created] CLAUDE.md (Ticket-Flow Routing block appended)
+  [created] .claude/rules/ticket-flow-routing.md (moved out of CLAUDE.md)
 
 Use /ticket-flow:board to regenerate a static KANBAN.md snapshot from bd on demand.
 ```
@@ -316,7 +320,8 @@ Use /ticket-flow:board to regenerate a static KANBAN.md snapshot from bd on dema
 - **Plugin root not resolvable**: `${CLAUDE_PLUGIN_ROOT}` is set by Claude Code when the skill is loaded. The `${VAR:?}` guard fails fast with an explanatory message if it isn't set.
 - **Custom template missing (beads mode, no `--skip-agents`)**: warn and fall back to vanilla `bd init`. User can run `/ticket-flow:bd-detox` afterward to clean up the anti-MEMORY clause.
 - **`.claude/rules/beads-workflow.md` references `.worktrees/`** (beads mode): init patches every standalone occurrence to `.claude/worktrees/` so `bd worktree create` and `/ticket-flow:pickup` end up in the same directory. Embedded paths like `/some/other/.worktrees/foo` (preceded by `/` or an alphanumeric) are left untouched. Idempotent — no change if the file is missing or already on the tf convention.
-- **Existing `CLAUDE.md` without the routing marker** (both modes): init appends the `Ticket-Flow Routing` block at the end, preserving existing content. Existing CLAUDE.md with the `<!-- ticket-flow:routing -->` marker → no-op. If the user later edits the block, the marker keeps re-runs idempotent — manually drop the marker line to force a re-append on next init.
+- **Existing `CLAUDE.md`** (both modes): untouched — the routing instruction lives in `.claude/rules/ticket-flow-routing.md`. The one exception is a **legacy routing block** written by an older init: init removes it (marker-delimited, surrounding content preserved) so the instruction does not exist twice, and reports `migrated`.
+- **Hand-edited routing rule**: never overwritten — the rule file's existence is the idempotency guard. Delete the file to get tf's version back on the next init; that is also the intended opt-out.
 
 ## What it doesn't do
 

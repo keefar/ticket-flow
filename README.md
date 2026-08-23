@@ -119,8 +119,13 @@ bash skills/flow/tests/test_verdict-check.sh
 bash skills/pickup/tests/test_detect-worktree.sh
 bash skills/kanban/tests/test_bd-helper-roundtrip.sh
 bash skills/kanban/tests/test_intake-pull.sh
-bash skills/init/tests/test_install-routing-claude-md.sh
+bash skills/init/tests/test_install-routing-rule.sh
 bash skills/init/tests/test_unify-worktree-path.sh
+bash skills/init/tests/test_set-worktree-baseref.sh
+bash skills/init/tests/test_install-worktree-include.sh
+bash skills/bd-detox/tests/test_install-prime.sh
+bash skills/bd-detox/tests/test_bd-detox.sh
+bash skills/status/tests/test_status.sh
 ```
 
 Helper scripts resolve their own directory via `$(dirname "$0")` — no hardcoded paths.
