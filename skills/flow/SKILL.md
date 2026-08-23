@@ -287,9 +287,14 @@ merged):
    "blockers": ["<hard blocker>", …]}
 ```
 
-### P4a. Agent death (spend limit / stall)
+### P4a. Agent death (limit / stall)
 
-A subagent can die — API spend limit, or the stall watchdog ("no progress for 600s") — *before* delivering its report, while a usable diff already sits in its worktree. Two rules:
+A subagent can die *before* delivering its report, while a usable diff already sits in its worktree. **Read the error first — the two limit kinds need opposite responses:**
+
+- **Usage limit** ("you've hit your usage limit", session or weekly): a time window that reopens by itself. Claude Code continues the session automatically when a claude.ai usage limit resets (2.1.234, switchable in `/config`). Waiting is the correct response; resume per rule 1 below once work continues.
+- **Spend limit** ("you've hit your monthly spend limit") or out of credits: a **money** ceiling, not a time window. It does not reset — the user has to raise it. Waiting never helps, which is why persistent retry mode fails immediately on these instead of polling (2.1.239). In `--serial`/`--loop` this matters: **stop the run**, report which tickets are done and which are untouched, and say plainly that the limit needs raising. Re-dispatching produces a chain of instant deaths that burns wall-clock and context for nothing.
+
+Then, for a death of either kind, two rules:
 
 1. **Resume vs. fresh dispatch — decided by worktree existence.** Before any resume attempt: `git worktree list`. Worktree still listed → resume via `SendMessage`, restating the full ticket context plus the state found in the worktree. Worktree gone (death before the first commit — the harness auto-removes an unchanged worktree) → dispatch a **fresh** subagent with the original P4 prompt; **never resume**: a worktree-less resume continues in the main checkout and silently loses isolation.
 2. **Inspect the diff after every death — before resuming, merging, or discarding.** `git diff --stat` in the surviving worktree + read the touched files against the ticket's requirements. The agent's last inline message often describes intent, not result — never adopt the work unchecked, never discard it unchecked.
