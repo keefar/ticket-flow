@@ -168,8 +168,9 @@ bd_update_notes_append() {
 # Usage: bd_update_notes_replace_prefix <bd-id> <prefix> <new-full-line>
 # Example: bd_update_notes_replace_prefix ticket-flow-abc "branch:" "branch: worktree-94-foo"
 #
-# Convention for `[Verify]` (dashboard project-hub reads this — beads.py's
-# _verify_snippet() picks the line that STARTS WITH "[Verify]", nothing else):
+# Convention for `[Verify]` (a one-line, greppable marker: external dashboards
+# and mirrors that render a "what to verify" column match the line that STARTS
+# WITH "[Verify]" and nothing else, so the prefix has to stay at column 0):
 #   bd_update_notes_replace_prefix <id> "[Verify]" "[Verify] <concise instruction>"
 # The instruction must be ONE line (no embedded newline other than intentional
 # <br> for multi-step lists), self-contained action + expected result, written

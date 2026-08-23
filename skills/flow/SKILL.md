@@ -194,7 +194,7 @@ In **Mode B** (`mode=kanban`) the original KANBAN.md → Testing wording is corr
 
 `--parallel` works **multiple independent tickets at once** — one worktree-isolated subagent per ticket, dispatched from this (the controller) session. Opt-in; the default is unaffected.
 
-**Why a controller + subagents:** the `Agent` tool's `isolation: "worktree"` gives each subagent a real, locked git worktree (`.claude/worktrees/agent-<hash>`, branch `worktree-agent-<hash>`, sharing the object store). One controller session coordinates, and the controller serializes the merges so they never race.
+**Why a controller + subagents:** the `Agent` tool's `isolation: "worktree"` gives each subagent a real git worktree (`.claude/worktrees/agent-<hash>`, branch `worktree-agent-<hash>`). What is isolated is the **working tree**; the repository itself is shared — one object store, one set of refs (so every agent's commits are visible from the main checkout without a fetch) — and so is everything keyed to the repo root, including the project's permission rules, which therefore hold inside its worktrees. One controller session coordinates, and the controller serializes the merges so they never race.
 
 **Where the worktree forks from is a setting, not a given.** Claude Code resolves `worktree.baseRef` to `origin/<default-branch>` unless told otherwise — *not* your local tip. This workflow deliberately never pushes, so with the default every dispatched agent forks off a base that is as many commits behind as you have merged since the last push. The merge still succeeds; the earlier tickets' work is simply absent from the later worktree. Step P0 refuses to dispatch in that state.
 
@@ -354,6 +354,7 @@ One consolidated report — per ticket: Done / Testing (+ residual pointer) / me
 - Verifying the "Done" status — that stays manual (real test)
 - Conflict resolution — on a merge conflict, the user takes over
 - **Network ops** (`git push`, `gh repo create`) — these happen via `/ticket-flow:push` / `/ticket-flow:publish`. After a `/ticket-flow:flow` chain finishes, the user runs `/ticket-flow:push` to upload.
+  **Scope of "commits stay local, no push, no PR":** it is tf's rule for the sessions tf itself drives — this controller and the subagents it dispatches, which the P4 prompt tells so explicitly. It is not a property of agent sessions in general: a Claude Code **background session** commits, pushes and opens its own draft PR (2.1.198). Work handed to one of those is outside this guarantee, and `/ticket-flow:push` is then not the only thing that can reach the remote.
 
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: discover
-description: Scan the current repository for tech-stack, conventions, test setup, and anti-patterns. Writes docs/PROJECT-CONVENTIONS.md so /spec generation has fast access to project-specific context. Run once per project, re-run when stack changes.
+description: Scan the current repository for tech-stack, conventions, test setup, and anti-patterns. Writes .claude/rules/project-conventions.md, which Claude Code loads into every session, so spec generation and implementation work from the project's own conventions. Run once per project, re-run when stack changes.
 ---
 
 # /ticket-flow:discover — Project-Convention Discovery
@@ -9,15 +9,15 @@ description: Scan the current repository for tech-stack, conventions, test setup
 
 ## What it does
 
-Codifies the answer to *"what conventions does this project follow?"* into a single read-once file. `/ticket-flow:spec` reads this file as background context, so spec generation doesn't re-derive conventions from scratch every time (saves tokens, improves consistency).
+Codifies the answer to *"what conventions does this project follow?"* into a single file that the harness itself loads. Claude Code discovers every `.md` under `.claude/rules/` recursively and loads a rule without a `paths:` frontmatter key at launch, at the same priority as `.claude/CLAUDE.md` ([memory docs](https://code.claude.com/docs/en/memory.md)) — so the conventions are in context for `/ticket-flow:spec`, `/ticket-flow:implement` and any plain session, without a skill having to fetch them. (Earlier versions wrote `docs/PROJECT-CONVENTIONS.md`, which only helped whoever remembered to read it.)
 
 Adapted from [Weselow Claude-Protocol's `/project-discovery`](https://github.com/weselow/claude-protocol) skill, but stripped of the rule-injection mechanism — output is a doc, not a hook.
 
 ## Output
 
-`docs/PROJECT-CONVENTIONS.md` — sections below. Existing file is **not overwritten**; re-running prompts "Update existing? (y/N)".
+`.claude/rules/project-conventions.md` — sections below. Existing file is **not overwritten**; re-running prompts "Update existing? (y/N)". A leftover `docs/PROJECT-CONVENTIONS.md` from an earlier run is reported and left alone — no skill reads it any more; merge what you want to keep and delete it.
 
-### Sections in PROJECT-CONVENTIONS.md
+### Sections in the rule file
 
 1. **Tech Stack** — frameworks/languages/versions detected from manifest files
    - Sources: `package.json`, `Cargo.toml`, `pyproject.toml`/`requirements.txt`, `go.mod`, `Package.swift`, `pom.xml`, `Gemfile`, `composer.json`, `*.csproj`
@@ -42,12 +42,12 @@ The skill is a thin wrapper around `skills/discover/discover.sh`. The script:
 3. Counts top file extensions via `git ls-files`, samples up to 10 basenames per non-noise extension to surface naming conventions.
 4. Reads `CLAUDE.md` / `AGENTS.md` / `README.md` — emits a line per file with section headers, and pulls "DO NOT / never / avoid" lines as the anti-pattern list.
 5. Detects `Tests/`, `tests/`, `__tests__/`, `test/`, `spec/` directories + counts test-shaped files (`*_test.*`, `*Tests.*`, etc.) via a single `git ls-files | grep -E` pass.
-6. Writes `docs/PROJECT-CONVENTIONS.md` via a `.tmp` file (atomic move).
+6. Writes `.claude/rules/project-conventions.md` via a `.tmp` file (atomic move), creating `.claude/rules/` if needed.
 
 Invocation pattern:
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT}/skills/discover/discover.sh"           # write docs/PROJECT-CONVENTIONS.md
+"${CLAUDE_PLUGIN_ROOT}/skills/discover/discover.sh"           # write .claude/rules/project-conventions.md
 "${CLAUDE_PLUGIN_ROOT}/skills/discover/discover.sh" --force   # overwrite without prompt
 "${CLAUDE_PLUGIN_ROOT}/skills/discover/discover.sh" --stdout  # print, don't write
 ```
@@ -71,4 +71,4 @@ Sandbox-safe (no network, only writes the output doc).
 - Use `Read`, `Bash` (find/grep/cat), and `Write` only
 - No external network calls
 - Output should be readable as a *teaching* doc for a new contributor, not a machine-only format
-- ≤ 250 lines target for PROJECT-CONVENTIONS.md — if longer, the project has too many conventions and most won't be useful as recall context
+- ≤ 250 lines target — a hard budget, not a style note: the file is loaded into **every** session in this project, so every line is paid for repeatedly. If the scan runs longer, the project has too many conventions and most won't be useful as recall context; the script prints a warning above the limit
