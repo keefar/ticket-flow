@@ -17,36 +17,62 @@ echo "ticket-flow @ $ROOT  (branch: $BRANCH)"
 echo
 
 # --- Mode detection (the .ticket-flow flag; .beads/-presence is the legacy fallback) ---
+# MODE_KEY is the machine-readable form every later check branches on; MODE is
+# only the display string.
 if [[ -f .ticket-flow ]] && grep -q '^mode=beads' .ticket-flow 2>/dev/null; then
+  MODE_KEY="beads"
   MODE="beads — bd is the source of truth"
 elif [[ -f .ticket-flow ]] && grep -q '^mode=kanban' .ticket-flow 2>/dev/null; then
+  MODE_KEY="kanban"
   MODE="kanban — KANBAN.md is the source of truth"
 elif [[ -d .beads ]]; then
+  MODE_KEY="beads"
   MODE="beads (legacy — no .ticket-flow flag; run /ticket-flow:init --mode=beads to set it)"
 elif [[ -f KANBAN.md ]]; then
+  MODE_KEY="kanban"
   MODE="kanban (legacy — no .ticket-flow flag; run /ticket-flow:init to set it)"
 else
+  MODE_KEY="none"
   MODE="none — no scaffolding yet"
 fi
 printf "PROJECT MODE:        %s\n" "$MODE"
 
 # --- Scaffolding ---
-# Required (flagged if missing): git, KANBAN.md, SPEC-TEMPLATE.md.
-# Optional (shown only when present): CLAUDE.md, AGENTS.md.
+# What counts as required depends on the mode:
+#   kanban → KANBAN.md is the source of truth, so its absence is a real defect
+#   beads  → bd is the sole source of truth and KANBAN.md is opt-in: it exists
+#            only when someone ran /ticket-flow:board, and it is never a
+#            workflow input (docs/architecture.md). Demanding it here would
+#            report a defect in the one mode where the architecture rules it out.
+#   none   → nothing is scaffolded yet; init is the recommendation anyway
+# Optional (shown only when present): CLAUDE.md, AGENTS.md, the board snapshot.
 declare -a SCAFF
+declare -a MISSING
 [[ -d .git ]]                            && SCAFF+=("git")
-[[ -f KANBAN.md ]]                       && SCAFF+=("KANBAN.md")
+[[ ! -d .git ]]                          && MISSING+=("git")
 [[ -f docs/specs/SPEC-TEMPLATE.md ]]     && SCAFF+=("SPEC-TEMPLATE.md")
+[[ ! -f docs/specs/SPEC-TEMPLATE.md ]]   && MISSING+=("SPEC-TEMPLATE.md")
+case "$MODE_KEY" in
+  beads)
+    [[ -d .beads ]]     && SCAFF+=(".beads/")   || MISSING+=(".beads/")
+    [[ -f KANBAN.md ]]  && SCAFF+=("KANBAN.md (board snapshot, optional)")
+    ;;
+  kanban)
+    [[ -f KANBAN.md ]]  && SCAFF+=("KANBAN.md") || MISSING+=("KANBAN.md")
+    ;;
+  *)
+    [[ -f KANBAN.md ]]  && SCAFF+=("KANBAN.md") || MISSING+=("KANBAN.md")
+    ;;
+esac
 [[ -f CLAUDE.md ]]                       && SCAFF+=("CLAUDE.md")
 [[ -f AGENTS.md ]]                       && SCAFF+=("AGENTS.md")
-declare -a MISSING
-[[ ! -d .git ]]                          && MISSING+=("git")
-[[ ! -f KANBAN.md ]]                     && MISSING+=("KANBAN.md")
-[[ ! -f docs/specs/SPEC-TEMPLATE.md ]]   && MISSING+=("SPEC-TEMPLATE.md")
 SCAFF_JOINED=""
-for s in "${SCAFF[@]}"; do
-  SCAFF_JOINED+="${SCAFF_JOINED:+ · }$s"
-done
+# bash 3.2 + set -u: expanding an empty array is an error, so guard the loop.
+if (( ${#SCAFF[@]} > 0 )); then
+  for s in "${SCAFF[@]}"; do
+    SCAFF_JOINED+="${SCAFF_JOINED:+ · }$s"
+  done
+fi
 [[ -z "$SCAFF_JOINED" ]] && SCAFF_JOINED="(none)"
 printf "SCAFFOLDING:         %s\n" "$SCAFF_JOINED"
 if (( ${#MISSING[@]} > 0 )); then
@@ -116,8 +142,12 @@ declare -a CLEAN
 
 if [[ "$BRANCH" == "(not a git repo)" ]]; then
   RECS+=("Run \`git init\` — not a git repository yet")
-elif [[ ! -f KANBAN.md ]]; then
-  RECS+=("Run \`/ticket-flow:init\` — scaffolding missing (KANBAN.md, SPEC-TEMPLATE.md)")
+elif (( ${#MISSING[@]} > 0 )); then
+  # Mode-aware: in beads mode a missing KANBAN.md is not in MISSING at all, so
+  # this no longer fires for the one thing the architecture makes optional.
+  MISSING_RECS=""
+  for m in "${MISSING[@]}"; do MISSING_RECS+="${MISSING_RECS:+, }$m"; done
+  RECS+=("Run \`/ticket-flow:init\` — scaffolding missing ($MISSING_RECS)")
 else
   CLEAN+=("Scaffolding present")
 fi
