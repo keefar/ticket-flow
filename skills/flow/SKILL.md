@@ -280,7 +280,9 @@ You are in an isolated git worktree. Implement this ticket end-to-end:
     plus the testable-surface gate;
   · step 3 — the review, and it is NOT optional: invoke the `code-review`
     skill at level `high` (skip only for a genuinely trivial change of
-    ≤50 lines, and say so). If `code-review` is not in your skill list or
+    ≤50 lines, and say so). It runs in the background and reports back
+    later — wait for its result and act on the findings before you write
+    the verdict. If `code-review` is not in your skill list or
     the call fails, do NOT substitute your own assessment: report
     `Review: not run (code-review unavailable)` and put that same string
     in the verdict's `review` field, so the controller can hand
