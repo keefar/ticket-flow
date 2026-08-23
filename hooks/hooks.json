@@ -1,5 +1,5 @@
 {
-  "description": "ticket-flow: guard the one-way step of making repository contents public",
+  "description": "ticket-flow: guard the one-way step of making repository contents public, and hold a dispatched ticket agent to a valid verdict",
   "hooks": {
     "PreToolUse": [
       {
@@ -8,6 +8,17 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/visibility-gate.sh"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/verdict-gate.sh"
           }
         ]
       }
