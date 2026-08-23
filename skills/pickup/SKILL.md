@@ -121,7 +121,6 @@ Guards: must be inside a git worktree, on a named branch, and not the main check
 ### 3. Build the branch name
 
 - With EnterWorktree: `name = <id>-<slug>` (the tool prepends `worktree-`), actual branch = `worktree-<id>-<slug>`
-- Fallback (manual `git worktree add`): `<tag>/<id>-<slug>` is possible (e.g. `feature/94-multipoint-messung`)
 - Slug: from the item title (strip cluster marker, max 30 chars, same slugify rules as /spec)
 - If a branch-suffix arg was given: use `<id>-<suffix>`
 
@@ -132,8 +131,8 @@ Guards: must be inside a git worktree, on a named branch, and not the main check
 - The tool automatically prepends `worktree-` and writes to `.claude/worktrees/<name>/`.
 - Actual branch name: `worktree-<id>-<slug>` — store **this** in the note, not the planned `<tag>/<id>-<slug>` (convention mismatch was caught in the first live test).
 
-**Fallback only if EnterWorktree is unavailable**: `Skill(superpowers:using-git-worktrees)` + manual `git worktree add`. WARNING:
-- On macOS Sequoia (15.x): the `com.apple.provenance` xattr on files under `.claude/agents/` and `.mcp.json` blocks `git worktree add` with "Operation not permitted" — even with `dangerouslyDisableSandbox: true`. Workaround: `xattr -d com.apple.provenance ...` is insufficient; EnterWorktree avoids the issue.
+**There is no manual fallback.** `EnterWorktree` is the documented path, it can switch between managed worktrees, and the reason once given for keeping a hand-rolled `git worktree add` around — a macOS Sequoia `com.apple.provenance` xattr blocking it — does not reproduce (measured 2026-08-23: the command succeeds with the xattr set). If `EnterWorktree` genuinely fails, report that rather than working around it; a silent hand-rolled worktree loses the isolation everything downstream assumes.
+
 - If worktrees must live **outside** `.claude/worktrees/` (xattr trouble there, build tools that choke on `.claude/`, non-git VCS): do not hand-roll `git worktree add` either — wire a `WorktreeCreate`/`WorktreeRemove` hook pair in `.claude/settings.json`; per the CC docs it replaces the default `git worktree` logic *including the location*, and `EnterWorktree`/`ExitWorktree` keep working on top of it (worktrunk ships a ready-made pair as a CC plugin). Everything downstream (`branch:`-lock, finish cleanup) must then use the path the hook returned, not `.claude/worktrees/<name>`.
 
 **Base ref note**: EnterWorktree defaults to branching from `origin/<default-branch>` — when working on an active feature branch (e.g. `tauri-prototype`), set `worktree.baseRef = "head"` in settings.json or everything since the last main sync is lost.

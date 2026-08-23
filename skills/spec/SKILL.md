@@ -141,7 +141,7 @@ Agent(subagent_type: "feature-dev:code-explorer",
                components, and the files essential to understand this area.")
 ```
 
-Read the files the explorer flags as essential, then fill the body from that understanding. **Skip this for trivial items** — it is a cost, not a ritual. `feature-dev` must be installed; if the agent type is unavailable, fall back to `docs/PROJECT-CONVENTIONS.md` + a direct read of the obvious files. See [`docs/research/feature-dev-vs-superpowers.md`](../../docs/research/feature-dev-vs-superpowers.md).
+Read the files the explorer flags as essential, then fill the body from that understanding. **Skip this for trivial items** — it is a cost, not a ritual. `feature-dev` must be installed; if the agent type is unavailable, fall back to `.claude/rules/project-conventions.md` (written by `/ticket-flow:discover`; older projects still have `docs/PROJECT-CONVENTIONS.md`) plus a direct read of the obvious files. See [`docs/research/feature-dev-vs-superpowers.md`](../../docs/research/feature-dev-vs-superpowers.md).
 
 **Step 8 (replaced)** — fill the whole body from the Kanban item + available context (codebase, linked specs, prior items):
 
