@@ -225,20 +225,13 @@ git worktree list                     # ← source of truth: is <worktree-path> 
 ```
 
 - **Path gone from `git worktree list`** → fake error, cleanup succeeded anyway. Proceed.
-- **Path still listed** → real error. **Escalate yourself before deferring to the user**:
-
-  ```bash
-  python3 -c "import shutil; shutil.rmtree('<worktree-path>')"  # python3 bypasses the EPERM that blocks git
-  git worktree prune                                            # drop the now-stale registration
-  git branch -d <branch>
-  git worktree list                                             # re-verify
-  ```
-
-  Only if the path *still* appears after this, defer (the guard above has already proven the branch is contained in `<target-branch>` — that is what makes the `-D` safe to hand out):
+- **Path still listed** → real error. **Stop and hand it to the user — never delete the directory yourself.** Forcing the removal (`shutil.rmtree`, `rm -rf`) is precisely the fallback Claude Code removed in 2.1.143, to prevent loss of gitignored or in-progress files. The guard above only proves that the *tracked* commits are contained in `<target-branch>`; it says nothing about what else lives under that path — `.env`, `node_modules`, build caches, an editor's unsaved buffer. A `git worktree remove` that genuinely fails is usually the file system reporting that something still holds the path (a live session, a running process), and that is a reason to look, not to force. The guard has already proven containment, which is what makes handing out the `-D` safe:
 
   ```
-  ⚠️ Worktree cleanup genuinely blocked (survives shutil.rmtree + prune). Run manually
-  from a fresh terminal/session:
+  ⚠️ Worktree cleanup blocked — `git worktree remove` failed and the path is still
+  registered. Run manually from a fresh terminal/session, after checking that
+  nothing you still need lives under it (gitignored files are not covered by the
+  merge check):
     git worktree remove --force .claude/worktrees/<name>
     git branch -D worktree-<name>
   ```
