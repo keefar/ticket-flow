@@ -30,6 +30,14 @@ assert_eq "1" "$RESIDUAL" "RESIDUAL count"
 assert_eq "0" "$BLOCKERS" "BLOCKERS count"
 assert_eq "green" "$TESTS_TYPECHECK" "TESTS_TYPECHECK"
 assert_eq "1" "$RESIDUAL_CHECKLIST_N" "RESIDUAL_CHECKLIST_N"
+assert_eq "not reported" "$REVIEW" "REVIEW falls back when the verdict omits it"
+
+# 1b) the optional review field is passed through verbatim
+printf '%s' "${VALID%\}}"',"review":"high — 2 findings"}' > "$TMP/v1b.json"
+OUT="$("$SCRIPT" "$TMP/v1b.json")"; RC=$?
+assert_eq "0" "$RC" "a verdict carrying review still validates"
+eval "$OUT"
+assert_eq "high — 2 findings" "$REVIEW" "REVIEW is passed through"
 
 # 2) fenced ```json block inside a prose report → accepted
 { echo "Implemented the thing. Summary follows."; echo; echo '```json'; printf '%s\n' "$VALID"; echo '```'; echo "bye"; } > "$TMP/report.md"

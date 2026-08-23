@@ -246,6 +246,8 @@ The `branch:` lock marker is **not** set here — each subagent's branch (`workt
 
 ### P4. Dispatch one subagent per ticket
 
+**Establish the verification recipe once — before any dispatch.** The controller works out, one time for the whole batch, how *this* project is actually verified: the typecheck command, the test command, and the end-to-end check a change of this kind needs (sources, in order: the project conventions doc `/ticket-flow:discover` writes, the project's `CLAUDE.md`/`.claude/rules/`, package scripts, the CI workflow, an existing test/e2e directory). The result goes verbatim into **every** dispatch prompt. Left to the subagents, each one re-derives it behind its own worktree wall, and a batch ends up with as many verification standards as it has agents — with the weakest deciding what "green" meant on the tickets it happened to draw. Pattern from Claude Code's built-in `/batch`, which resolves the e2e recipe once up front and hands the same one to every worker. When a project has no e2e path, say that explicitly in the prompt (`E2E: none — the unit suite is the ceiling`) instead of dropping the line: an absent line reads as "figure it out yourself".
+
 **Bundle file-overlapping tickets first (heuristic, not an algorithm).** Two worktree agents that touch the same core file fork from different points of `main` and produce a real 3-way merge conflict at P6 — even when the tickets change textually disjoint functions. Before dispatching, skim each ticket's spec/notes/description for the files it names; tickets that share a file go to **one** subagent — one worktree, one prompt covering all bundled tickets. Specs/notes usually name the core files; when unsure, bundle. P6 then treats a bundle as one unit: one branch, one merge, finish per ticket.
 
 Dispatch all subagents in a **single message** (multiple `Agent` calls → they run concurrently), each with `subagent_type: "general-purpose"`, `isolation: "worktree"`, and `model:` chosen by ticket complexity (the model-tier table in `skills/implement/SKILL.md`, `ticket-flow-sqh`). **`--serial`**: dispatch **one** `Agent` call, wait for its report, run P6 for that ticket, then dispatch the next — never two in flight.
@@ -257,6 +259,12 @@ Ticket #<id>: <title>
 Spec: <path or none>   Plan: <path or none>
 Acceptance Criteria: <inline list or "see spec">
 
+Verification recipe for this project — established once by the controller,
+use exactly this, do not invent your own:
+  Typecheck: <command, or "none">
+  Tests:     <command, or "none">
+  E2E:       <command or procedure, or "none — the unit suite is the ceiling">
+
 You are in an isolated git worktree. Implement this ticket end-to-end:
 - FIRST action: an initial plan commit — `git commit --allow-empty`, your
   implementation plan in the body. Then commit after every sub-step, never
@@ -266,10 +274,21 @@ You are in an isolated git worktree. Implement this ticket end-to-end:
 - Follow skills/implement/SKILL.md steps 3–6 (pick mode by plan complexity,
   incremental commits, typecheck/test after each major step). Skip steps 1–2
   (branch-derivation) — the context above replaces it.
-- Then run skills/finish/SKILL.md steps 2–4 (typecheck, tests, testable-
-  surface gate, optional review/deploy) and classify every AC as *proven*
-  or *residual*. [--serial: steps 2–3 only — do NOT deploy; the controller
-  deploys from the merged target branch after the merge.]
+- Then run skills/finish/SKILL.md steps 2–4 and classify every AC as
+  *proven* or *residual*:
+  · step 2 — typecheck, tests and the e2e check from the recipe above,
+    plus the testable-surface gate;
+  · step 3 — the review, and it is NOT optional: invoke the `code-review`
+    skill at level `high` (skip only for a genuinely trivial change of
+    ≤50 lines, and say so). If `code-review` is not in your skill list or
+    the call fails, do NOT substitute your own assessment: report
+    `Review: not run (code-review unavailable)` and put that same string
+    in the verdict's `review` field, so the controller can hand
+    `/code-review high` to the user. Never `ultra` — it cannot be started
+    by a model at all;
+  · step 4 — deploy only if the project defines one.
+  [--serial: steps 2–3 only — do NOT deploy; the controller deploys from
+  the merged target branch after the merge.]
 - Do NOT merge, do NOT push, do NOT touch .beads/ or KANBAN.md, do NOT run
   the finish merge/cleanup steps.
 - On a hard blocker: report it back instead of filing the escalation bead
@@ -283,6 +302,7 @@ merged):
    "sha": "<git rev-parse HEAD>", "commits": <n>,
    "acs": [{"id": "AC1", "status": "proven|residual", "evidence": "<what proves it / why it needs the user>"}, …],
    "tests": {"typecheck": "green|red|n/a", "suite": "green|red|n/a"},
+   "review": "<level> — <n> findings" | "not run (<reason>)" | "skipped (trivial, <n> lines)",
    "residual_checklist": ["<step the user must do>", …],
    "blockers": ["<hard blocker>", …]}
 ```
@@ -301,7 +321,7 @@ Then, for a death of either kind, two rules:
 
 ### P5. Consolidated checkpoint
 
-When all subagents return, present **one** checkpoint — per ticket: branch, commits, ACs proven/residual, blockers. `--parallel` has **no per-ticket checkpoints** — that is the trade for throughput; use the default `--local` when you want them. Ask once: merge all / merge a subset / stop.
+When all subagents return, present **one** checkpoint — per ticket: branch, commits, ACs proven/residual, review (`REVIEW` from the verdict — `not reported` and `not run (…)` are results and get printed as such; an omitted line reads as "reviewed"), blockers. `--parallel` has **no per-ticket checkpoints** — that is the trade for throughput; use the default `--local` when you want them. Ask once: merge all / merge a subset / stop.
 
 **`--serial`**: no question — print the same per-ticket line as a **report** and go straight to P6 for that ticket. The run stops only for a hard blocker (escalation bead), a merge conflict on that ticket (left standing, loop continues), or an unresolved decision gate without `--use-recommendations` (deferred in `--loop`, stop otherwise).
 
@@ -309,7 +329,7 @@ When all subagents return, present **one** checkpoint — per ticket: branch, co
 
 For each ticket whose subagent succeeded, **one at a time** — never two at once (`main` and `.beads/issues.jsonl` are shared state). A P4 bundle is **one** unit here: one branch, steps 1–3 once, then step 4 per bundled ticket.
 
-0. **Verdict gate** (mandatory, before anything else): save the subagent's final message to a file and run `"${CLAUDE_PLUGIN_ROOT}/skills/flow/verdict-check.sh" <file>` — it extracts the fenced ```json verdict, validates it (branch, git sha, non-empty `acs` with `proven|residual` each, proven needs evidence, `tests` present) and prints `BRANCH=… SHA=… PROVEN=… RESIDUAL=… BLOCKERS=…` for `eval`. **Invalid or missing verdict → do not merge on prose.** Treat it like P4a rule 2: inspect the worktree diff, then `SendMessage` the subagent asking for the verdict (worktree still present) or dispatch fresh (worktree gone). `BRANCH`/`SHA` feed step 1, `PROVEN`/`RESIDUAL` feed the gating in step 4, `BLOCKERS>0` goes to step 5. Pattern: Castra's persona verdict — nothing mutates until the verdict validates.
+0. **Verdict gate** (mandatory, before anything else): save the subagent's final message to a file and run `"${CLAUDE_PLUGIN_ROOT}/skills/flow/verdict-check.sh" <file>` — it extracts the fenced ```json verdict, validates it (branch, git sha, non-empty `acs` with `proven|residual` each, proven needs evidence, `tests` present) and prints `BRANCH=… SHA=… PROVEN=… RESIDUAL=… BLOCKERS=… REVIEW=…` for `eval`. **Invalid or missing verdict → do not merge on prose.** Treat it like P4a rule 2: inspect the worktree diff, then `SendMessage` the subagent asking for the verdict (worktree still present) or dispatch fresh (worktree gone). `BRANCH`/`SHA` feed step 1, `PROVEN`/`RESIDUAL` feed the gating in step 4, `BLOCKERS>0` goes to step 5, `REVIEW` goes verbatim into the P5/P7 report (it is reported, never gated — but a `not run (…)` or `not reported` is stated, not swallowed). Pattern: Castra's persona verdict — nothing mutates until the verdict validates.
 1. **Verify the commits are on the expected branch** (mandatory, before any merge attempt): `git branch --contains <sha>` with the last-commit sha from the verdict (`SHA`) — the expected `worktree-agent-<hash>` branch must appear. `isolation: worktree` dispatches occasionally commit straight onto the base branch instead, and the subagent's report still reads like success; only this check catches it. If the expected branch is missing: `git rebase <target-branch>` run inside that worktree replays the commit onto the right base without losing it — then re-run the check. Do not merge until it passes.
 2. `cd <main-repo>` — commit dirty `.beads/` yourself, exactly as in `skills/finish/SKILL.md` step 5c: skip when `.beads/` is gitignored (`git check-ignore -q .beads/issues.jsonl`), otherwise `git add` the dirty `.beads/` exports and `git commit -m "chore: bd-Export-Sync vor Merge"` on the target branch — never leave it to the user (a dirty `.beads/` makes every merge refuse with "Your local changes … would be overwritten").
 3. `git merge <worktree-agent-branch>` — on a conflict: stop this ticket, leave it for the user, continue with the rest.
@@ -322,7 +342,7 @@ For each ticket whose subagent succeeded, **one at a time** — never two at onc
 
 ### P7. Final report
 
-One consolidated report — per ticket: Done / Testing (+ residual pointer) / merge-conflict / blocked. `--loop` adds: Testing items closed by the sweep (with evidence), tickets **deferred** (open decision gate — name the two ways to resolve), escalation beads filed, deploys run, and why the loop ended (queue empty / all remaining deferred or blocked / caller stop). Network ops stay out: `--parallel`/`--serial`/`--loop` leave commits local like the default mode; the user runs `/ticket-flow:push` from this session afterwards.
+One consolidated report — per ticket: Done / Testing (+ residual pointer) / merge-conflict / blocked, plus the ticket's `REVIEW` string. `--loop` adds: Testing items closed by the sweep (with evidence), tickets **deferred** (open decision gate — name the two ways to resolve), escalation beads filed, deploys run, and why the loop ended (queue empty / all remaining deferred or blocked / caller stop). Network ops stay out: `--parallel`/`--serial`/`--loop` leave commits local like the default mode; the user runs `/ticket-flow:push` from this session afterwards.
 
 ## Serial and loop — summary
 
