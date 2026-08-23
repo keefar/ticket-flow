@@ -11,7 +11,7 @@ description: Diagnose ticket-flow project state and recommend the next action. I
 
 One-shot orientation: tells you *what state this project is in* and *what to do next*. Useful after compaction, when picking up someone else's branch, or before any `/ticket-flow:flow` to confirm the project is ready.
 
-Companion to (not replacement for) `bd doctor` — bd doctor checks beads internals, `/ticket-flow:status` checks the project's tf-workflow state.
+Companion to (not replacement for) the two diagnostics below it: `bd doctor` checks beads internals, Claude Code's built-in `/doctor` checks the harness (hooks, MCP servers, permissions, plugin loading), and `/ticket-flow:status` checks the project's tf-workflow state. The script points at both so a harness-level fault is not mistaken for an idle project.
 
 ## Output
 
@@ -55,6 +55,7 @@ The script ranks recommendations in this priority order:
 5. **Active in-progress beads** — `bd list --status=in_progress` items not done → continue with `/ticket-flow:implement` or `/ticket-flow:finish` in the existing worktree
 6. **Ready work** — `bd ready` count > 0 → pick a bead, `/ticket-flow:flow <id>`
 7. **Nothing pressing** — project is at rest
+8. **Standing diagnostics** (always listed, never conditional) — `/doctor` for the harness itself (hooks, MCP servers, permissions, plugin loading) and, in beads mode, `bd doctor` for beads internals. This script only inspects the project; when tf misbehaves for harness reasons the project looks idle from here, so the pointer has to be visible even on a clean run.
 
 Items not in any of these classes are surfaced as "NO ACTION NEEDED" so the user sees the clean state explicitly.
 

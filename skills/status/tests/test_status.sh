@@ -101,5 +101,21 @@ out=$( cd "$d" && "$SCRIPT_UNDER_TEST" 2>&1 )
 grep -q 'IN-FLIGHT:           1 worktree' <<<"$out" && ok "counts in-flight worktrees" \
   || nope "counts in-flight worktrees" "$out"
 
+# 9. The harness's own diagnostic is offered, including on a clean project.
+d=$(make_project beads)
+out=$( cd "$d" && "$SCRIPT_UNDER_TEST" 2>&1 )
+grep -qF '/doctor' <<<"$out" && ok "recommends /doctor for harness health" \
+  || nope "recommends /doctor for harness health" "$out"
+grep -qF 'bd doctor' <<<"$out" && ok "recommends bd doctor in beads mode" \
+  || nope "recommends bd doctor in beads mode" "$out"
+
+# 10. bd doctor is not offered where there is no beads db; /doctor still is.
+d=$(make_project kanban kanban)
+out=$( cd "$d" && "$SCRIPT_UNDER_TEST" 2>&1 )
+grep -qF 'bd doctor' <<<"$out" && nope "no bd doctor without .beads/" "$out" \
+  || ok "no bd doctor without .beads/"
+grep -qF '/doctor' <<<"$out" && ok "/doctor is offered in kanban mode too" \
+  || nope "/doctor is offered in kanban mode too" "$out"
+
 echo "  $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

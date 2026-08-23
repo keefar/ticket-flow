@@ -181,14 +181,26 @@ else
   [[ -d .beads ]] && CLEAN+=("No pending beads work")
 fi
 
+# Standing diagnostics: this script only sees the project. Everything below the
+# project — hooks, MCP servers, permissions, plugin loading — is the harness's
+# own business, and Claude Code ships `/doctor` for exactly that. It belongs in
+# the recommendation list, not in a footnote: a tf workflow that misbehaves for
+# harness reasons looks identical from here to one that is simply idle.
+declare -a TOOLING
+TOOLING+=("Harness health (hooks · MCP servers · permissions · plugin loading): \`/doctor\`")
+[[ -d .beads ]] && TOOLING+=("Beads internals (db, sync, dependency graph): \`bd doctor\`")
+
 echo "RECOMMENDED NEXT STEPS:"
 if (( ${#RECS[@]} == 0 )); then
-  echo "  (nothing pressing — project is in a clean state)"
+  echo "  (nothing pressing in the project itself)"
 else
   for r in "${RECS[@]}"; do
     echo "  - $r"
   done
 fi
+for t in "${TOOLING[@]}"; do
+  echo "  - $t"
+done
 
 if (( ${#CLEAN[@]} > 0 )); then
   echo
