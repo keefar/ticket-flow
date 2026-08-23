@@ -16,3 +16,6 @@ docs/
 CLAUDE.md
 .beads/
 .claude/settings.json
+
+# Claude Code worktrees — never part of the published tree
+.claude/worktrees/
