@@ -17,36 +17,68 @@ echo "ticket-flow @ $ROOT  (branch: $BRANCH)"
 echo
 
 # --- Mode detection (the .ticket-flow flag; .beads/-presence is the legacy fallback) ---
+# MODE_KEY is the machine-readable form every later check branches on; MODE is
+# only the display string.
 if [[ -f .ticket-flow ]] && grep -q '^mode=beads' .ticket-flow 2>/dev/null; then
+  MODE_KEY="beads"
   MODE="beads — bd is the source of truth"
 elif [[ -f .ticket-flow ]] && grep -q '^mode=kanban' .ticket-flow 2>/dev/null; then
+  MODE_KEY="kanban"
   MODE="kanban — KANBAN.md is the source of truth"
 elif [[ -d .beads ]]; then
+  MODE_KEY="beads"
   MODE="beads (legacy — no .ticket-flow flag; run /ticket-flow:init --mode=beads to set it)"
 elif [[ -f KANBAN.md ]]; then
+  MODE_KEY="kanban"
   MODE="kanban (legacy — no .ticket-flow flag; run /ticket-flow:init to set it)"
 else
+  MODE_KEY="none"
   MODE="none — no scaffolding yet"
 fi
 printf "PROJECT MODE:        %s\n" "$MODE"
 
 # --- Scaffolding ---
-# Required (flagged if missing): git, KANBAN.md, SPEC-TEMPLATE.md.
-# Optional (shown only when present): CLAUDE.md, AGENTS.md.
+# What counts as required depends on the mode:
+#   kanban → KANBAN.md is the source of truth, so its absence is a real defect
+#   beads  → bd is the sole source of truth and KANBAN.md is opt-in: it exists
+#            only when someone ran /ticket-flow:board, and it is never a
+#            workflow input (docs/architecture.md). Demanding it here would
+#            report a defect in the one mode where the architecture rules it out.
+#   none   → nothing is scaffolded yet; init is the recommendation anyway
+# Optional (shown only when present): CLAUDE.md, AGENTS.md, the board snapshot.
 declare -a SCAFF
-[[ -d .git ]]                            && SCAFF+=("git")
-[[ -f KANBAN.md ]]                       && SCAFF+=("KANBAN.md")
+declare -a MISSING
+# `-d .git` is false inside a linked worktree, where .git is a FILE pointing at
+# the main repo — i.e. it would report "git missing" in exactly the situation
+# /ticket-flow:status exists for (recovering an in-flight worktree). Ask git.
+if git rev-parse --git-dir >/dev/null 2>&1; then
+  SCAFF+=("git")
+else
+  MISSING+=("git")
+fi
 [[ -f docs/specs/SPEC-TEMPLATE.md ]]     && SCAFF+=("SPEC-TEMPLATE.md")
+[[ ! -f docs/specs/SPEC-TEMPLATE.md ]]   && MISSING+=("SPEC-TEMPLATE.md")
+case "$MODE_KEY" in
+  beads)
+    [[ -d .beads ]]     && SCAFF+=(".beads/")   || MISSING+=(".beads/")
+    [[ -f KANBAN.md ]]  && SCAFF+=("KANBAN.md (board snapshot, optional)")
+    ;;
+  kanban)
+    [[ -f KANBAN.md ]]  && SCAFF+=("KANBAN.md") || MISSING+=("KANBAN.md")
+    ;;
+  *)
+    [[ -f KANBAN.md ]]  && SCAFF+=("KANBAN.md") || MISSING+=("KANBAN.md")
+    ;;
+esac
 [[ -f CLAUDE.md ]]                       && SCAFF+=("CLAUDE.md")
 [[ -f AGENTS.md ]]                       && SCAFF+=("AGENTS.md")
-declare -a MISSING
-[[ ! -d .git ]]                          && MISSING+=("git")
-[[ ! -f KANBAN.md ]]                     && MISSING+=("KANBAN.md")
-[[ ! -f docs/specs/SPEC-TEMPLATE.md ]]   && MISSING+=("SPEC-TEMPLATE.md")
 SCAFF_JOINED=""
-for s in "${SCAFF[@]}"; do
-  SCAFF_JOINED+="${SCAFF_JOINED:+ · }$s"
-done
+# bash 3.2 + set -u: expanding an empty array is an error, so guard the loop.
+if (( ${#SCAFF[@]} > 0 )); then
+  for s in "${SCAFF[@]}"; do
+    SCAFF_JOINED+="${SCAFF_JOINED:+ · }$s"
+  done
+fi
 [[ -z "$SCAFF_JOINED" ]] && SCAFF_JOINED="(none)"
 printf "SCAFFOLDING:         %s\n" "$SCAFF_JOINED"
 if (( ${#MISSING[@]} > 0 )); then
@@ -70,8 +102,19 @@ fi
 
 # --- In-flight work ---
 WT_COUNT=0
-[[ -d .claude/worktrees ]] && WT_COUNT="$(find .claude/worktrees -mindepth 1 -maxdepth 1 -type d ! -name '.DS_Store' 2>/dev/null | wc -l | tr -d ' ')"
+declare -a WT_PATHS
+if [[ -d .claude/worktrees ]]; then
+  while IFS= read -r p; do
+    [[ -n "$p" ]] && WT_PATHS+=("$p")
+  done < <(find .claude/worktrees -mindepth 1 -maxdepth 1 -type d ! -name '.DS_Store' 2>/dev/null | sort)
+  WT_COUNT=${#WT_PATHS[@]}
+fi
 printf "IN-FLIGHT:           %d worktree(s) under .claude/worktrees\n" "$WT_COUNT"
+if (( WT_COUNT > 0 )); then
+  for p in "${WT_PATHS[@]}"; do
+    printf "  %s\n" "$p"
+  done
+fi
 
 # --- Beads ---
 BD_TOTAL=0
@@ -116,8 +159,12 @@ declare -a CLEAN
 
 if [[ "$BRANCH" == "(not a git repo)" ]]; then
   RECS+=("Run \`git init\` — not a git repository yet")
-elif [[ ! -f KANBAN.md ]]; then
-  RECS+=("Run \`/ticket-flow:init\` — scaffolding missing (KANBAN.md, SPEC-TEMPLATE.md)")
+elif (( ${#MISSING[@]} > 0 )); then
+  # Mode-aware: in beads mode a missing KANBAN.md is not in MISSING at all, so
+  # this no longer fires for the one thing the architecture makes optional.
+  MISSING_RECS=""
+  for m in "${MISSING[@]}"; do MISSING_RECS+="${MISSING_RECS:+, }$m"; done
+  RECS+=("Run \`/ticket-flow:init\` — scaffolding missing ($MISSING_RECS)")
 else
   CLEAN+=("Scaffolding present")
 fi
@@ -135,7 +182,13 @@ else
 fi
 
 if (( WT_COUNT > 0 )); then
-  RECS+=("$WT_COUNT worktree(s) under .claude/worktrees — \`git worktree list\` to review; a --parallel run that errored can leave stale ones (\`git worktree remove\`)")
+  # An orphaned worktree is the normal aftermath of a subagent that died: the
+  # branch still holds the work. Re-entering it is the recovery move, and
+  # EnterWorktree(path=…) is how a session gets back in — paths below
+  # .claude/worktrees/ need no approval. Deleting is the LAST resort, so the
+  # resume hint goes first.
+  RECS+=("$WT_COUNT worktree(s) under .claude/worktrees — resume one with \`EnterWorktree(path=\"${WT_PATHS[0]}\")\`, then \`/ticket-flow:status\` inside it")
+  RECS+=("Review them with \`git worktree list\`; only once a worktree's branch is merged (\`git merge-base --is-ancestor\`) is \`git worktree remove\` safe — an errored --parallel run leaves work behind, not just a stale directory")
 fi
 
 if (( BD_IN_PROGRESS > 0 )); then
@@ -151,14 +204,26 @@ else
   [[ -d .beads ]] && CLEAN+=("No pending beads work")
 fi
 
+# Standing diagnostics: this script only sees the project. Everything below the
+# project — hooks, MCP servers, permissions, plugin loading — is the harness's
+# own business, and Claude Code ships `/doctor` for exactly that. It belongs in
+# the recommendation list, not in a footnote: a tf workflow that misbehaves for
+# harness reasons looks identical from here to one that is simply idle.
+declare -a TOOLING
+TOOLING+=("Harness health (hooks · MCP servers · permissions · plugin loading): \`/doctor\`")
+[[ -d .beads ]] && TOOLING+=("Beads internals (db, sync, dependency graph): \`bd doctor\`")
+
 echo "RECOMMENDED NEXT STEPS:"
 if (( ${#RECS[@]} == 0 )); then
-  echo "  (nothing pressing — project is in a clean state)"
+  echo "  (nothing pressing in the project itself)"
 else
   for r in "${RECS[@]}"; do
     echo "  - $r"
   done
 fi
+for t in "${TOOLING[@]}"; do
+  echo "  - $t"
+done
 
 if (( ${#CLEAN[@]} > 0 )); then
   echo

@@ -13,8 +13,11 @@
 # - KANBAN.md is fully generated EXCEPT a marked intake zone preserved verbatim
 # - Intake markers: `<!-- INTAKE:START -->` and `<!-- INTAKE:END -->`
 #   When absent in the current KANBAN.md, the renderer scaffolds an empty zone
-#   inside the Inbox section. (The intake zone is legacy; pure-beads mode has no
-#   intake workflow — new items go straight to `bd create`.)
+#   inside the Inbox section. The zone is the write half of a pair: a human jots
+#   free-form items there, and `intake-pull.sh` turns them into bd issues (see
+#   the "Capture new items" section of skills/kanban/SKILL.md). New items may of
+#   course still go straight to `bd create` — the zone is the low-friction
+#   alternative, not a replacement.
 #
 # Usage:
 #   kanban-render.sh                # write KANBAN.md (in place)

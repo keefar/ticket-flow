@@ -20,8 +20,10 @@ Sets up a project for ticket-flow. The single entry point for both backends — 
 - `docs/specs/SPEC-TEMPLATE.md` — template that `/ticket-flow:spec` copies from
 - `docs/superpowers/plans/.gitkeep` — directory for implementation plans (used by `superpowers:writing-plans`)
 - `.claude/worktrees/` — directory where `/ticket-flow:pickup` creates branch worktrees
+- `.worktreeinclude` — gitignored local config (`.env`, `*.local`, …) that must follow a ticket into its worktree; seeded from what the repo actually has, skipped when there is nothing (via `skills/init/install-worktree-include.sh`)
+- `.claude/settings.json` → `worktree.symlinkDirectories` — dependency directories (`node_modules`, `vendor`, …) linked back to the main checkout instead of reinstalled per worktree; build outputs deliberately excluded (via `skills/init/set-worktree-symlinks.sh`)
 - `.ticket-flow` — mode flag (`mode=kanban` or `mode=beads`)
-- `CLAUDE.md` — appends a marked `Ticket-Flow Routing` block (via `skills/init/install-routing-claude-md.sh`) so planning/ideation prompts route through tf instead of `superpowers:brainstorming`, `superpowers:writing-plans`, or `TodoWrite`. CLAUDE.md is "user instructions" — highest priority in the skill-trigger order. Idempotent via the `<!-- ticket-flow:routing -->` marker.
+- `.claude/rules/ticket-flow-routing.md` — the `Ticket-Flow Routing` rule (via `skills/init/install-routing-rule.sh`) so planning/ideation prompts route through tf instead of `superpowers:brainstorming` or `superpowers:writing-plans`. A rule without a `paths:` frontmatter key loads at launch with the same priority as `.claude/CLAUDE.md` ([memory docs](https://code.claude.com/docs/en/memory.md)) — same effect, without writing into the consumer project's own CLAUDE.md. Idempotent (the file's existence is the guard); a routing block left in CLAUDE.md by an older init is removed.
 
 **Kanban-only scaffolding:**
 
@@ -29,6 +31,7 @@ Sets up a project for ticket-flow. The single entry point for both backends — 
 
 **Beads-only scaffolding:**
 
+- `.beads/PRIME.md` — override for `bd prime`'s built-in output (via `skills/bd-detox/install-prime.sh`); without it bd re-injects its anti-MEMORY.md guidance on every SessionStart and PreCompact. Never overwrites an existing file.
 - `.beads/` — bd's Dolt database, created by `bd init --agents-template <tf custom template>`. The custom template drops vanilla `bd init`'s anti-MEMORY.md clause so Claude Code's Auto-Memory keeps working alongside `bd remember`. With `--skip-agents`, no AGENTS.md is written and the `BEADS INTEGRATION` block is skipped from CLAUDE.md too.
 - If an existing `KANBAN.md` with items is present, every row is imported into bd via `skills/kanban/kanban-import.sh`, then the file is archived to `KANBAN.archived.md`. The archived board can be regenerated on demand from bd state with `/ticket-flow:board` — it is no longer a workflow input.
 - If `.claude/rules/beads-workflow.md` exists and references the stock `.worktrees/` convention, init patches every standalone occurrence to `.claude/worktrees/` (via `skills/init/unify-worktree-path.sh`). This eliminates the dualism where `bd worktree create` and `/ticket-flow:pickup` would otherwise write to different directories. Idempotent.
@@ -117,17 +120,49 @@ fi
 scaffold_dir  "./.claude/worktrees"
 ```
 
-### 1b. CLAUDE.md routing block
+### 1b. Routing rule
 
-Append a marked `Ticket-Flow Routing` block to `./CLAUDE.md` so any planning, ideation, bug, or change-request prompt routes through tf (`bd create` + `/ticket-flow:spec`) instead of falling back to `superpowers:brainstorming`, `superpowers:writing-plans`, or `TodoWrite`. Runs for both modes. Delegates to `skills/init/install-routing-claude-md.sh`; idempotent via the `<!-- ticket-flow:routing -->` marker.
+Install `.claude/rules/ticket-flow-routing.md` so any planning, ideation, bug, or change-request prompt routes through tf (`bd create` + `/ticket-flow:spec`) instead of falling back to `superpowers:brainstorming` or `superpowers:writing-plans`. Runs for both modes. Delegates to `skills/init/install-routing-rule.sh`.
+
+**Why a rule and not the project's CLAUDE.md**: `.claude/rules/` is the documented place for this. Every `.md` below it is discovered recursively, and a rule *without* a `paths:` frontmatter key is loaded at launch with the same priority as `.claude/CLAUDE.md` — so the routing instruction carries the same weight it did before, while the consumer's own CLAUDE.md stays untouched. It is also the less invasive shape: one file that belongs to tf, trivially overridden or deleted by the user, and no merge conflict with whatever the project already keeps in CLAUDE.md.
+
+**No `TodoWrite` / `TaskCreate` ban**: the old block forbade both. Dead rule — the native task tools are switched off on the current models since CC 2.1.233, so the prohibition protected against nothing while costing context on every launch.
 
 ```bash
-case "$("$PLUGIN/skills/init/install-routing-claude-md.sh")" in
-  created)  CREATED+=("CLAUDE.md (with Ticket-Flow Routing block)") ;;
-  appended) CREATED+=("CLAUDE.md (Ticket-Flow Routing block appended)") ;;
-  no-op) ;;  # marker already present — silent
+case "$("$PLUGIN/skills/init/install-routing-rule.sh")" in
+  created)  CREATED+=(".claude/rules/ticket-flow-routing.md") ;;
+  migrated) CREATED+=(".claude/rules/ticket-flow-routing.md (moved out of CLAUDE.md)") ;;
+  no-op) ;;  # rule already present — silent
 esac
 ```
+
+### 1c. Worktree readiness
+
+Both modes create a worktree per ticket, and a worktree is a **fresh checkout**: nothing gitignored comes along. Without this step the implementing session gets a tree with no `.env` and no `node_modules`, the app refuses to start, and the failure reads like a code problem. Claude Code has two mechanisms for it; init wires up both, from what the repo actually contains rather than from a guess.
+
+**Copy local config into every worktree** — `.worktreeinclude` at the repository root, gitignore syntax, one pattern per line. Only files that match a pattern *and* are gitignored are copied, so tracked files are never duplicated ([worktree docs](https://code.claude.com/docs/en/worktrees.md)). `skills/init/install-worktree-include.sh` seeds it with the local-config files that exist here and that `git check-ignore` confirms are ignored (`.env*`, `*.local`, `.npmrc`, `credentials.json`, `.claude/settings.local.json`, …); a project with none of them gets no file. Existing lines are never reordered or dropped.
+
+> Caveat: a project with a custom `WorktreeCreate` hook (non-git VCS) does **not** get `.worktreeinclude` processing — that hook has to copy the files itself.
+
+**Share dependency directories instead of reinstalling them** — `worktree.symlinkDirectories` in `.claude/settings.json` links each worktree's directory back to the main checkout's copy ([large-codebases docs](https://code.claude.com/docs/en/large-codebases.md)). `skills/init/set-worktree-symlinks.sh` records the dependency dirs that exist and are gitignored (`node_modules`, `vendor`, `Pods`, `.venv`, …). **Build outputs are deliberately excluded** (`target/`, `.next/`, `build/`): build tools lock and rewrite those, and one shared build cache across two parallel worktree agents is a corrupted build cache.
+
+```bash
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+
+case "$("$PLUGIN/skills/init/install-worktree-include.sh" "$ROOT")" in
+  created) CREATED+=(".worktreeinclude (local config copied into worktrees)") ;;
+  patched) CREATED+=(".worktreeinclude (patched: new local config files)") ;;
+  no-op|none-detected|no-git) ;;  # nothing gitignored worth copying — silent
+esac
+
+case "$("$PLUGIN/skills/init/set-worktree-symlinks.sh" "$ROOT")" in
+  created) CREATED+=(".claude/settings.json (worktree.symlinkDirectories)") ;;
+  patched) CREATED+=(".claude/settings.json (patched: worktree.symlinkDirectories)") ;;
+  no-op|none-detected|no-git) ;;  # no shared dependency dirs — silent
+esac
+```
+
+`$ROOT` is the git root in beads mode; in kanban mode without git both helpers report `no-git` and do nothing.
 
 ### 2a. Kanban path
 
@@ -220,6 +255,15 @@ fi
 
 The archived board can be regenerated on demand from bd state with `/ticket-flow:board`.
 
+**Install the `bd prime` override** — vanilla bd re-emits its own guidance (including the anti-MEMORY.md clause) at runtime through the SessionStart **and** PreCompact hooks, where no generated file can reach it. Since bd 0.44.0 a `.beads/PRIME.md` replaces that output wholesale. init installs tf's template; an existing `PRIME.md` is never overwritten. Two consequences worth knowing: the file is also what a session sees *after a compaction*, so it must carry the state-recovery commands, and on bd < 1.2.2 the override hides `bd remember` entries from prime (confirmed on 1.0.4, fixed in 1.2.2).
+
+```bash
+case "$("$PLUGIN/skills/bd-detox/install-prime.sh" "$ROOT")" in
+  created) CREATED+=(".beads/PRIME.md (bd prime override)") ;;
+  no-op|no-beads|no-template) ;;  # present, or nothing to install into — silent
+esac
+```
+
 **Unify worktree convention** — bd has no hard default for `bd worktree create`; the `.worktrees/` location is just a convention documented in stock beads rules files. tf's convention is `.claude/worktrees/`. To prevent a dualism where manual `bd worktree create` and `/ticket-flow:pickup` write to different directories, init delegates to `skills/init/unify-worktree-path.sh` to patch every standalone `.worktrees/` reference in `.claude/rules/beads-workflow.md`. The helper is idempotent — repeat runs on already-patched (or absent) files are no-ops.
 
 ```bash
@@ -250,7 +294,7 @@ Kanban mode:
   [created] docs/specs/SPEC-TEMPLATE.md
   [created] docs/superpowers/plans/
   [exists, skipped] .claude/worktrees/
-  [created] CLAUDE.md (with Ticket-Flow Routing block)
+  [created] .claude/rules/ticket-flow-routing.md
 
 Mode: kanban — KANBAN.md is the source of truth.
 To switch to beads mode later: re-run /ticket-flow:init --mode=beads (migrates + flips the flag).
@@ -270,11 +314,11 @@ Beads mode (fresh):
   [set] git config beads.role maintainer
   [created] docs/specs/SPEC-TEMPLATE.md
   [created] docs/superpowers/plans/
-  [created] CLAUDE.md (with Ticket-Flow Routing block)
+  [created] .claude/rules/ticket-flow-routing.md
 
 bd initialized with tf custom template — Auto-Memory + bd remember coexist.
-(Or, with --skip-agents: no AGENTS.md, no BEADS INTEGRATION block in CLAUDE.md.
- bd prime runtime output still mentions MEMORY.md — known caveat.)
+(Or, with --skip-agents: no AGENTS.md, no BEADS INTEGRATION block in CLAUDE.md.)
+.beads/PRIME.md installed — bd prime emits that file instead of its built-in text.
 
 Next steps:
 1. bd create --title="…" --description="…" --type=feature
@@ -290,14 +334,16 @@ Beads mode (migration from kanban):
   [renamed] KANBAN.md → KANBAN.archived.md
   [created] .ticket-flow (mode=beads)
   [created] .beads/
-  [created] CLAUDE.md (Ticket-Flow Routing block appended)
+  [created] .claude/rules/ticket-flow-routing.md (moved out of CLAUDE.md)
 
 Use /ticket-flow:board to regenerate a static KANBAN.md snapshot from bd on demand.
 ```
 
 ## Edge cases
 
-- **Not in a git repo (kanban mode)**: fine — kanban scaffolding doesn't require git.
+- **Not in a git repo (kanban mode)**: fine — kanban scaffolding doesn't require git. The two worktree helpers report `no-git` and write nothing; there are no worktrees without git either.
+- **Nothing gitignored worth copying**: `install-worktree-include.sh` writes no `.worktreeinclude` at all rather than an empty stub, and `set-worktree-symlinks.sh` leaves `worktree.symlinkDirectories` unset. Re-run init after adding a `.env` and it is picked up then.
+- **Hand-maintained `.worktreeinclude` / `symlinkDirectories`**: only missing entries are appended; existing lines and manual entries are never reordered or removed.
 - **Not in a git repo (beads mode)**: abort with hint — `bd init` requires a git repo. Run `git init` first.
 - **Existing `.beads/` (beads mode)**: abort with hint — `bd reinit` or remove first; don't silently re-init.
 - **Existing `.ticket-flow` flag**: see the matrix in step 0. Same-mode re-run is a no-op for the flag itself (only missing scaffold targets get added). `mode=kanban` + `--mode=beads` triggers the migration (overwrite the flag, import KANBAN.md). `mode=beads` + `--mode=kanban` is refused — beads is the richer model.
@@ -306,7 +352,8 @@ Use /ticket-flow:board to regenerate a static KANBAN.md snapshot from bd on dema
 - **Plugin root not resolvable**: `${CLAUDE_PLUGIN_ROOT}` is set by Claude Code when the skill is loaded. The `${VAR:?}` guard fails fast with an explanatory message if it isn't set.
 - **Custom template missing (beads mode, no `--skip-agents`)**: warn and fall back to vanilla `bd init`. User can run `/ticket-flow:bd-detox` afterward to clean up the anti-MEMORY clause.
 - **`.claude/rules/beads-workflow.md` references `.worktrees/`** (beads mode): init patches every standalone occurrence to `.claude/worktrees/` so `bd worktree create` and `/ticket-flow:pickup` end up in the same directory. Embedded paths like `/some/other/.worktrees/foo` (preceded by `/` or an alphanumeric) are left untouched. Idempotent — no change if the file is missing or already on the tf convention.
-- **Existing `CLAUDE.md` without the routing marker** (both modes): init appends the `Ticket-Flow Routing` block at the end, preserving existing content. Existing CLAUDE.md with the `<!-- ticket-flow:routing -->` marker → no-op. If the user later edits the block, the marker keeps re-runs idempotent — manually drop the marker line to force a re-append on next init.
+- **Existing `CLAUDE.md`** (both modes): untouched — the routing instruction lives in `.claude/rules/ticket-flow-routing.md`. The one exception is a **legacy routing block** written by an older init: init removes it (marker-delimited, surrounding content preserved) so the instruction does not exist twice, and reports `migrated`.
+- **Hand-edited routing rule**: never overwritten — the rule file's existence is the idempotency guard. Delete the file to get tf's version back on the next init; that is also the intended opt-out.
 
 ## What it doesn't do
 
