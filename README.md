@@ -11,7 +11,7 @@ A **kanban- or beads-backed** ticket workflow for Claude Code — a spec → pic
 - `/ticket-flow:kanban` — board maintenance
 - `/ticket-flow:board` — generate a read-only `KANBAN.md` snapshot from bd state (beads mode)
 
-Setup & maintenance: `/ticket-flow:bd-detox`, `/ticket-flow:discover`, `/ticket-flow:status` (diagnose the project and recommend the next action — also the recovery entry after a lost session), `/ticket-flow:publish`, `/ticket-flow:push`.
+Setup & maintenance: `/ticket-flow:bd-detox`, `/ticket-flow:discover`, `/ticket-flow:status` (diagnose the project and recommend the next action — also the recovery entry after a lost session), `/ticket-flow:publish`, `/ticket-flow:push`, `/ticket-flow:visibility` (inspect or change whether a repo is local, private or public — runs an offline preflight over the whole history first, because going public exposes history and cannot be undone).
 
 ```
 spec ──► pickup ──► implement ──► finish ──► Testing / Done
