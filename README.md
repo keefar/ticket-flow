@@ -104,7 +104,7 @@ Quick scaffold for a new project — in Claude Code, from the project root:
 /ticket-flow:init --mode=beads    # non-interactive: beads mode (also migrates an existing KANBAN.md)
 ```
 
-Branch naming: `worktree-<id>-<slug>` (from EnterWorktree) or `<tag>/<id>-<slug>` (manual fallback).
+Branch naming: `worktree-<id>-<slug>` — whatever `EnterWorktree` produced. A worktree adopted from another tool (`pickup --here`) keeps the branch name that tool chose; tf stores the actual name in the item's `branch:` marker instead of assuming a convention.
 
 ## Update workflow
 
