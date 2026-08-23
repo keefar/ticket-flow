@@ -17,7 +17,7 @@
 #
 # Sandbox-safe: no network, read-only except for the output doc.
 #
-# Usage: discover.sh           (writes to .claude/rules/project-conventions.md; prompts if it exists)
+# Usage: discover.sh           (writes .claude/rules/project-conventions.md; refuses if it exists)
 #        discover.sh --force   (overwrite without prompt)
 #        discover.sh --stdout  (write to stdout instead of file; no prompt)
 set -u
@@ -28,7 +28,7 @@ for arg in "$@"; do
   case "$arg" in
     --force)  FORCE=1 ;;
     --stdout) TO_STDOUT=1 ;;
-    -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
+    -h|--help) awk 'NR>1 && /^#/ { sub(/^# ?/, ""); print; next } NR>1 { exit }' "$0"; exit 0 ;;
     *) echo "ERROR: unknown arg '$arg'" >&2; exit 2 ;;
   esac
 done
@@ -200,12 +200,22 @@ fi
 
 # --- 6. Anti-patterns / "DO NOT" rules ---
 header "Anti-Patterns (DO NOT lines from existing docs)"
+emit "_Scraped by keyword — candidates, not verified rules. Delete what is not one; this file is loaded into every session._"
+emit ""
 declare -a DONTS
 for d in CLAUDE.md AGENTS.md README.md; do
   [[ -f "$d" ]] || continue
   while IFS= read -r line; do
     [[ -n "$line" ]] && DONTS+=("[$d] $line")
-  done < <(grep -E -i '(do not|don.?t|never|avoid|forbidden|prohibited)' "$d" 2>/dev/null | sed 's/^[[:space:]-]*//' | head -10)
+  # Table rows, headings and quotes are not rules — a matched markdown table
+  # row used to land here verbatim, mangling the output and adding a
+  # "prohibition" that was really a credits entry. Over-long lines are prose,
+  # not rules, so they go too.
+  done < <(grep -E -i '(do not|don.?t|never|avoid|forbidden|prohibited)' "$d" 2>/dev/null \
+             | grep -vE '^[[:space:]]*([|#>]|!\[)' \
+             | sed 's/^[[:space:]-]*//' \
+             | awk 'length($0) > 0 && length($0) <= 200' \
+             | head -10)
 done
 if (( ${#DONTS[@]} == 0 )); then
   emit "_No explicit anti-pattern rules found._"
@@ -225,6 +235,10 @@ if (( ! TO_STDOUT )); then
   echo "✓ Wrote $OUT ($LINES lines)"
   if (( LINES > 250 )); then
     echo "  note: over the 250-line budget — this file is loaded into every session, so trim it."
+  fi
+  if ! git ls-files --error-unmatch "$OUT" >/dev/null 2>&1; then
+    echo "  note: not tracked by git yet — a worktree checkout carries only tracked"
+    echo "        files, so dispatched agents would not see it. \`git add $OUT\`"
   fi
   if [[ -f "$LEGACY_OUT" ]]; then
     echo "  note: $LEGACY_OUT is the old location and is no longer read by any skill."

@@ -15,7 +15,7 @@ Adapted from [Weselow Claude-Protocol's `/project-discovery`](https://github.com
 
 ## Output
 
-`.claude/rules/project-conventions.md` — sections below. Existing file is **not overwritten**; re-running prompts "Update existing? (y/N)". A leftover `docs/PROJECT-CONVENTIONS.md` from an earlier run is reported and left alone — no skill reads it any more; merge what you want to keep and delete it.
+`.claude/rules/project-conventions.md` — sections below. An existing file is **not overwritten**: the script reports it and exits 1 — re-run with `--force` to replace it (there is no interactive prompt, so an agent must not read that exit code as a failure). A leftover `docs/PROJECT-CONVENTIONS.md` from an earlier run is reported and left alone — no skill reads it any more; merge what you want to keep and delete it.
 
 ### Sections in the rule file
 
@@ -44,6 +44,8 @@ The skill is a thin wrapper around `skills/discover/discover.sh`. The script:
 5. Detects `Tests/`, `tests/`, `__tests__/`, `test/`, `spec/` directories + counts test-shaped files (`*_test.*`, `*Tests.*`, etc.) via a single `git ls-files | grep -E` pass.
 6. Writes `.claude/rules/project-conventions.md` via a `.tmp` file (atomic move), creating `.claude/rules/` if needed.
 
+**Commit the file.** A worktree checkout carries only *tracked* files, so an untracked rule never reaches the worktree agents that `/ticket-flow:flow --parallel` dispatches — the audience the rule exists for. The script says so when the file is not tracked yet; `git add .claude/rules/project-conventions.md` closes it.
+
 Invocation pattern:
 
 ```bash
@@ -71,4 +73,5 @@ Sandbox-safe (no network, only writes the output doc).
 - Use `Read`, `Bash` (find/grep/cat), and `Write` only
 - No external network calls
 - Output should be readable as a *teaching* doc for a new contributor, not a machine-only format
+- The anti-pattern section is a keyword scrape and is labelled as candidates in the output — markdown table rows, headings and over-long prose are filtered out, but a wrong bullet is still cheaper to delete by hand than to leave loaded into every session
 - ≤ 250 lines target — a hard budget, not a style note: the file is loaded into **every** session in this project, so every line is paid for repeatedly. If the scan runs longer, the project has too many conventions and most won't be useful as recall context; the script prints a warning above the limit

@@ -189,7 +189,7 @@ if (( WT_COUNT > 0 )); then
   # inside its worktrees too. Deleting is the LAST resort, so the resume hint
   # goes first.
   RECS+=("$WT_COUNT worktree(s) under .claude/worktrees — resume one with \`EnterWorktree(path=\"${WT_PATHS[0]}\")\`, then \`/ticket-flow:status\` inside it")
-  RECS+=("Only once a worktree's branch is merged (\`git merge-base --is-ancestor\`) is \`git worktree remove\` safe — a worktree that was never written to is dropped by the harness itself, so one still listed here holds work")
+  RECS+=("Only once a worktree's branch is merged (\`git merge-base --is-ancestor\`) is \`git worktree remove\` safe — an errored run leaves work behind, and unmerged work is unrecoverable once the branch is gone")
 fi
 
 if (( BD_IN_PROGRESS > 0 )); then
