@@ -29,6 +29,7 @@ Sets up a project for ticket-flow. The single entry point for both backends — 
 
 **Beads-only scaffolding:**
 
+- `.beads/PRIME.md` — override for `bd prime`'s built-in output (via `skills/bd-detox/install-prime.sh`); without it bd re-injects its anti-MEMORY.md guidance on every SessionStart and PreCompact. Never overwrites an existing file.
 - `.beads/` — bd's Dolt database, created by `bd init --agents-template <tf custom template>`. The custom template drops vanilla `bd init`'s anti-MEMORY.md clause so Claude Code's Auto-Memory keeps working alongside `bd remember`. With `--skip-agents`, no AGENTS.md is written and the `BEADS INTEGRATION` block is skipped from CLAUDE.md too.
 - If an existing `KANBAN.md` with items is present, every row is imported into bd via `skills/kanban/kanban-import.sh`, then the file is archived to `KANBAN.archived.md`. The archived board can be regenerated on demand from bd state with `/ticket-flow:board` — it is no longer a workflow input.
 - If `.claude/rules/beads-workflow.md` exists and references the stock `.worktrees/` convention, init patches every standalone occurrence to `.claude/worktrees/` (via `skills/init/unify-worktree-path.sh`). This eliminates the dualism where `bd worktree create` and `/ticket-flow:pickup` would otherwise write to different directories. Idempotent.
@@ -220,6 +221,15 @@ fi
 
 The archived board can be regenerated on demand from bd state with `/ticket-flow:board`.
 
+**Install the `bd prime` override** — vanilla bd re-emits its own guidance (including the anti-MEMORY.md clause) at runtime through the SessionStart **and** PreCompact hooks, where no generated file can reach it. Since bd 0.44.0 a `.beads/PRIME.md` replaces that output wholesale. init installs tf's template; an existing `PRIME.md` is never overwritten. Two consequences worth knowing: the file is also what a session sees *after a compaction*, so it must carry the state-recovery commands, and on bd < 1.2.2 the override hides `bd remember` entries from prime (confirmed on 1.0.4, fixed in 1.2.2).
+
+```bash
+case "$("$PLUGIN/skills/bd-detox/install-prime.sh" "$ROOT")" in
+  created) CREATED+=(".beads/PRIME.md (bd prime override)") ;;
+  no-op|no-beads|no-template) ;;  # present, or nothing to install into — silent
+esac
+```
+
 **Unify worktree convention** — bd has no hard default for `bd worktree create`; the `.worktrees/` location is just a convention documented in stock beads rules files. tf's convention is `.claude/worktrees/`. To prevent a dualism where manual `bd worktree create` and `/ticket-flow:pickup` write to different directories, init delegates to `skills/init/unify-worktree-path.sh` to patch every standalone `.worktrees/` reference in `.claude/rules/beads-workflow.md`. The helper is idempotent — repeat runs on already-patched (or absent) files are no-ops.
 
 ```bash
@@ -273,8 +283,8 @@ Beads mode (fresh):
   [created] CLAUDE.md (with Ticket-Flow Routing block)
 
 bd initialized with tf custom template — Auto-Memory + bd remember coexist.
-(Or, with --skip-agents: no AGENTS.md, no BEADS INTEGRATION block in CLAUDE.md.
- bd prime runtime output still mentions MEMORY.md — known caveat.)
+(Or, with --skip-agents: no AGENTS.md, no BEADS INTEGRATION block in CLAUDE.md.)
+.beads/PRIME.md installed — bd prime emits that file instead of its built-in text.
 
 Next steps:
 1. bd create --title="…" --description="…" --type=feature
