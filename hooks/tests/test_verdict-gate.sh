@@ -8,6 +8,13 @@ nope() { FAIL=$((FAIL+1)); echo "  FAIL — $1"; echo "         $2"; }
 
 command -v jq >/dev/null 2>&1 || { echo "  skipped — jq not installed"; exit 0; }
 
+# The gate remembers which agents it already blocked, under $TMPDIR. Without a
+# fresh one, a second run of this file finds the markers from the first and
+# every block case silently passes — green on run one, red afterwards, for
+# reasons that have nothing to do with the code.
+TMPDIR=$(mktemp -d -p /tmp/claude)/
+export TMPDIR
+
 # A tf project with a worktree-shaped checkout inside it.
 setup_tf_worktree() {
   local main; main=$(mktemp -d -p /tmp/claude)
