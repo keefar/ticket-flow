@@ -1,6 +1,8 @@
 ---
 name: publish
 description: First-time publish — create a remote GitHub repository AND push the initial state. For brand-new local repos that have never had an `origin` remote. Atomic: repo creation + push in one `gh` call. Invoke as `/ticket-flow:publish <owner>/<name> <visibility>` (visibility = public|private|internal).
+argument-hint: <owner>/<name> <public|private|internal>
+disable-model-invocation: true
 ---
 
 # /ticket-flow:publish — First-time repo publish

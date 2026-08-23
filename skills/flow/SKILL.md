@@ -1,6 +1,7 @@
 ---
 name: flow
 description: Orchestrator for Ticket-Flow — default is `--local` (all phases in this session with user checkpoints). `--parallel` works multiple ready tickets at once via worktree-isolated subagents in this session; `--serial` (one subagent at a time, merge+deploy+cleanup per ticket) and `--loop` (re-query the ready queue after every merge until empty) turn it into an unattended queue runner. Invoke as `/ticket-flow:flow <kanban-id>`, `/ticket-flow:flow --parallel [<id>…]` or `/ticket-flow:flow --serial --loop [--use-recommendations]`. Also trigger on any natural-language request to work on, implement, umsetzen, bearbeiten, or abarbeiten a specific bead/issue/kanban-item — not only the literal slash command. Phrasing like "implementier DSP-xyz", "setz Bead X um", "lass uns den Bead angehen", "arbeite die offenen/ready Beads ab" all count (User-Anweisung 2026-07-05: muss auch sinngemäß triggern, nicht nur wortwörtlich).
+argument-hint: <ticket-id> | --parallel [ids…] | --serial --loop
 ---
 
 # /flow — Ticket-Flow orchestrator

@@ -1,6 +1,7 @@
 ---
 name: init
 description: Scaffold a ticket-flow project — asks kanban or beads on first run, then sets up the chosen backend. Idempotent. Invoke as `/ticket-flow:init` (interactive) or `/ticket-flow:init --mode=kanban|beads` (non-interactive). Beads mode also migrates an existing `KANBAN.md` and accepts `--skip-agents` plus other `bd init` pass-throughs.
+argument-hint: [--mode=kanban|beads] [--skip-agents]
 ---
 
 # /ticket-flow:init — Scaffold ticket-flow project files

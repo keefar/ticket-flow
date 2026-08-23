@@ -1,6 +1,7 @@
 ---
 name: pickup
 description: Claim a KANBAN Backlog item for work — validate DoR, create isolated worktree, scaffold plan, set branch-lock, move item to In Progress. Invoke as `/ticket-flow:pickup <kanban-id>`, `/ticket-flow:pickup <id> <branch-suffix>`, or `/ticket-flow:pickup <id> --here` to adopt the worktree/branch you are already in (orca, Conductor, worktrunk, bead-workflow-skills cards) instead of creating one.
+argument-hint: <ticket-id> [branch-suffix] [--here]
 ---
 
 # /ticket-flow:pickup — Phase 1 of Ticket-Flow

@@ -1,6 +1,8 @@
 ---
 name: visibility
 description: Inspect or change a repository's publication state — local, private, public. Runs the offline preflight over the whole history before anything becomes public, records the state for the visibility gate, and never treats "set it back to private" as a remedy. Invoke as `/ticket-flow:visibility` (report), `/ticket-flow:visibility check` (preflight only), or `/ticket-flow:visibility public|private|local` (transition).
+argument-hint: [check | public | private | local]
+disable-model-invocation: true
 ---
 
 # /ticket-flow:visibility — publication state of this repository
