@@ -1,6 +1,6 @@
 ---
 name: implement
-description: Phase 2 of Ticket-Flow — execute the plan for the current In-Progress Kanban item. Runs inside the worktree. Delegates to `superpowers:executing-plans` or `subagent-driven-development` depending on plan complexity. Invoke as `/ticket-flow:implement`.
+description: Phase 2 of Ticket-Flow — execute the plan for the current In-Progress Kanban item. Runs inside the worktree. Delegates to `superpowers:executing-plans`, or to subagent dispatch when the session is allowed to spawn one, depending on plan complexity. Invoke as `/ticket-flow:implement`.
 ---
 
 # /ticket-flow:implement — Phase 2 of Ticket-Flow
@@ -66,6 +66,8 @@ Assess plan complexity:
 | Multi-step, sequential, clean plan | Plan execution | `Skill(superpowers:executing-plans)` |
 | Multiple independent strands (e.g. parallel research) | Subagent dispatch | `Skill(superpowers:subagent-driven-development)` or `dispatching-parallel-agents` |
 | Research item (output is a doc, not code) | Subagent dispatch for parallel sources, synthesized by you | `dispatching-parallel-agents` |
+
+**The last two rows need a session that can spawn subagents — a dispatched one cannot.** A subagent running under `flow --parallel`/`--serial` (and any background session) has no `Agent`, `Workflow`, `TaskOutput`, `ScheduleWakeup` or `AskUserQuestion` tool: the dispatch simply is not available, and attempting it wastes a turn on a tool that isn't there. In that case drop to the row above — execute the plan yourself, sequentially, committing per sub-step. Only `flow --local` and a session you started yourself can take the dispatch rows.
 
 **Decide, don't prompt** (see *Decide, don't prompt* in `skills/flow/SKILL.md`): the plan/item almost always picks the row for you — a clean sequential plan → plan execution, a single-file bug → interactive, a research item → subagent dispatch. Infer the mode and proceed. Only when the plan genuinely fits two rows with materially different outcomes — and no default is clearly right — stop and ask which mode.
 
