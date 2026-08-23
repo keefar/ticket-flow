@@ -20,6 +20,8 @@ Sets up a project for ticket-flow. The single entry point for both backends — 
 - `docs/specs/SPEC-TEMPLATE.md` — template that `/ticket-flow:spec` copies from
 - `docs/superpowers/plans/.gitkeep` — directory for implementation plans (used by `superpowers:writing-plans`)
 - `.claude/worktrees/` — directory where `/ticket-flow:pickup` creates branch worktrees
+- `.worktreeinclude` — gitignored local config (`.env`, `*.local`, …) that must follow a ticket into its worktree; seeded from what the repo actually has, skipped when there is nothing (via `skills/init/install-worktree-include.sh`)
+- `.claude/settings.json` → `worktree.symlinkDirectories` — dependency directories (`node_modules`, `vendor`, …) linked back to the main checkout instead of reinstalled per worktree; build outputs deliberately excluded (via `skills/init/set-worktree-symlinks.sh`)
 - `.ticket-flow` — mode flag (`mode=kanban` or `mode=beads`)
 - `.claude/rules/ticket-flow-routing.md` — the `Ticket-Flow Routing` rule (via `skills/init/install-routing-rule.sh`) so planning/ideation prompts route through tf instead of `superpowers:brainstorming` or `superpowers:writing-plans`. A rule without a `paths:` frontmatter key loads at launch with the same priority as `.claude/CLAUDE.md` ([memory docs](https://code.claude.com/docs/en/memory.md)) — same effect, without writing into the consumer project's own CLAUDE.md. Idempotent (the file's existence is the guard); a routing block left in CLAUDE.md by an older init is removed.
 
@@ -133,6 +135,34 @@ case "$("$PLUGIN/skills/init/install-routing-rule.sh")" in
   no-op) ;;  # rule already present — silent
 esac
 ```
+
+### 1c. Worktree readiness
+
+Both modes create a worktree per ticket, and a worktree is a **fresh checkout**: nothing gitignored comes along. Without this step the implementing session gets a tree with no `.env` and no `node_modules`, the app refuses to start, and the failure reads like a code problem. Claude Code has two mechanisms for it; init wires up both, from what the repo actually contains rather than from a guess.
+
+**Copy local config into every worktree** — `.worktreeinclude` at the repository root, gitignore syntax, one pattern per line. Only files that match a pattern *and* are gitignored are copied, so tracked files are never duplicated ([worktree docs](https://code.claude.com/docs/en/worktrees.md)). `skills/init/install-worktree-include.sh` seeds it with the local-config files that exist here and that `git check-ignore` confirms are ignored (`.env*`, `*.local`, `.npmrc`, `credentials.json`, `.claude/settings.local.json`, …); a project with none of them gets no file. Existing lines are never reordered or dropped.
+
+> Caveat: a project with a custom `WorktreeCreate` hook (non-git VCS) does **not** get `.worktreeinclude` processing — that hook has to copy the files itself.
+
+**Share dependency directories instead of reinstalling them** — `worktree.symlinkDirectories` in `.claude/settings.json` links each worktree's directory back to the main checkout's copy ([large-codebases docs](https://code.claude.com/docs/en/large-codebases.md)). `skills/init/set-worktree-symlinks.sh` records the dependency dirs that exist and are gitignored (`node_modules`, `vendor`, `Pods`, `.venv`, …). **Build outputs are deliberately excluded** (`target/`, `.next/`, `build/`): build tools lock and rewrite those, and one shared build cache across two parallel worktree agents is a corrupted build cache.
+
+```bash
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+
+case "$("$PLUGIN/skills/init/install-worktree-include.sh" "$ROOT")" in
+  created) CREATED+=(".worktreeinclude (local config copied into worktrees)") ;;
+  patched) CREATED+=(".worktreeinclude (patched: new local config files)") ;;
+  no-op|none-detected|no-git) ;;  # nothing gitignored worth copying — silent
+esac
+
+case "$("$PLUGIN/skills/init/set-worktree-symlinks.sh" "$ROOT")" in
+  created) CREATED+=(".claude/settings.json (worktree.symlinkDirectories)") ;;
+  patched) CREATED+=(".claude/settings.json (patched: worktree.symlinkDirectories)") ;;
+  no-op|none-detected|no-git) ;;  # no shared dependency dirs — silent
+esac
+```
+
+`$ROOT` is the git root in beads mode; in kanban mode without git both helpers report `no-git` and do nothing.
 
 ### 2a. Kanban path
 
@@ -311,7 +341,9 @@ Use /ticket-flow:board to regenerate a static KANBAN.md snapshot from bd on dema
 
 ## Edge cases
 
-- **Not in a git repo (kanban mode)**: fine — kanban scaffolding doesn't require git.
+- **Not in a git repo (kanban mode)**: fine — kanban scaffolding doesn't require git. The two worktree helpers report `no-git` and write nothing; there are no worktrees without git either.
+- **Nothing gitignored worth copying**: `install-worktree-include.sh` writes no `.worktreeinclude` at all rather than an empty stub, and `set-worktree-symlinks.sh` leaves `worktree.symlinkDirectories` unset. Re-run init after adding a `.env` and it is picked up then.
+- **Hand-maintained `.worktreeinclude` / `symlinkDirectories`**: only missing entries are appended; existing lines and manual entries are never reordered or removed.
 - **Not in a git repo (beads mode)**: abort with hint — `bd init` requires a git repo. Run `git init` first.
 - **Existing `.beads/` (beads mode)**: abort with hint — `bd reinit` or remove first; don't silently re-init.
 - **Existing `.ticket-flow` flag**: see the matrix in step 0. Same-mode re-run is a no-op for the flag itself (only missing scaffold targets get added). `mode=kanban` + `--mode=beads` triggers the migration (overwrite the flag, import KANBAN.md). `mode=beads` + `--mode=kanban` is refused — beads is the richer model.
