@@ -48,8 +48,14 @@ printf "PROJECT MODE:        %s\n" "$MODE"
 # Optional (shown only when present): CLAUDE.md, AGENTS.md, the board snapshot.
 declare -a SCAFF
 declare -a MISSING
-[[ -d .git ]]                            && SCAFF+=("git")
-[[ ! -d .git ]]                          && MISSING+=("git")
+# `-d .git` is false inside a linked worktree, where .git is a FILE pointing at
+# the main repo — i.e. it would report "git missing" in exactly the situation
+# /ticket-flow:status exists for (recovering an in-flight worktree). Ask git.
+if git rev-parse --git-dir >/dev/null 2>&1; then
+  SCAFF+=("git")
+else
+  MISSING+=("git")
+fi
 [[ -f docs/specs/SPEC-TEMPLATE.md ]]     && SCAFF+=("SPEC-TEMPLATE.md")
 [[ ! -f docs/specs/SPEC-TEMPLATE.md ]]   && MISSING+=("SPEC-TEMPLATE.md")
 case "$MODE_KEY" in

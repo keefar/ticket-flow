@@ -127,5 +127,19 @@ grep -qF 'bd doctor' <<<"$out" && nope "no bd doctor without .beads/" "$out" \
 grep -qF '/doctor' <<<"$out" && ok "/doctor is offered in kanban mode too" \
   || nope "/doctor is offered in kanban mode too" "$out"
 
+# 11. Inside a linked worktree .git is a file, not a directory — git must still
+#     count as present, or status misfires in the very case it is meant for.
+d=$(make_project beads)
+git -C "$d" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
+git -C "$d" worktree add -q "$d/.claude/worktrees/wt-x" -b wt-x >/dev/null 2>&1
+mkdir -p "$d/.claude/worktrees/wt-x/docs/specs" "$d/.claude/worktrees/wt-x/.beads"
+printf '# t\n' > "$d/.claude/worktrees/wt-x/docs/specs/SPEC-TEMPLATE.md"
+printf 'mode=beads\n' > "$d/.claude/worktrees/wt-x/.ticket-flow"
+out=$( cd "$d/.claude/worktrees/wt-x" && "$SCRIPT_UNDER_TEST" 2>&1 )
+grep -q 'missing:.*git' <<<"$out" && nope "a linked worktree is recognised as a git repo" "$out" \
+  || ok "a linked worktree is recognised as a git repo"
+grep -q 'SCAFFOLDING:.*git' <<<"$out" && ok "git is listed as present inside a worktree" \
+  || nope "git is listed as present inside a worktree" "$out"
+
 echo "  $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
