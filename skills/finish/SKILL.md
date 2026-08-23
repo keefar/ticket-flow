@@ -140,7 +140,7 @@ git worktree remove <worktree-path>
 git branch -d <branch>
 ```
 
-The `git worktree remove` here follows Step 7's verify-then-escalate rule (`git worktree list` after the error, always).
+The `git worktree remove` here follows Step 7's verify-then-defer rule (`git worktree list` after the error, always).
 
 ### 6. Gating, verification checklist + KANBAN.md update
 
@@ -198,7 +198,7 @@ Plus, if a bug log is warranted (multiple hypotheses, algorithmic fix, regressio
 
 ### 7. Worktree cleanup
 
-**Guard first, cleanup second** — two pre-conditions, checked from the main-repo root **before** any `git worktree remove` / `git branch -d` / `git branch -D` in this step (including the escalation path below). Both are mandatory; if either fails, **stop: touch neither worktree nor branch**, report, and leave the worktree standing for inspection:
+**Guard first, cleanup second** — two pre-conditions, checked from the main-repo root **before** any `git worktree remove` / `git branch -d` / `git branch -D` in this step (including the commands handed to the user further down). Both are mandatory; if either fails, **stop: touch neither worktree nor branch**, report, and leave the worktree standing for inspection:
 
 ```bash
 git merge-base --is-ancestor <branch> <target-branch> \

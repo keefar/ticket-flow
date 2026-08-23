@@ -160,7 +160,7 @@ ticket-flow is a deliberate cherry-pick from tools that solved one piece each. P
 
 (Some skill files label these `Cherry #n` — numbering from the internal cherry-pick plan: #1 testable-surfaces, #3 discover, #4 knowledge typing, #5 beads backend, #6 sub-items, #7 reference-fork, #8 escalation issue, #9 model tiers.)
 
-tf-original (for the record): the two-mode `.ticket-flow` flag, the `branch:` lock as the only worktree→ticket back-reference, the decision gate (`## Decisions` → `## Decision Log`), the proven/residual classification with Testing-vs-Done gating, `reference-fork`, the verify-then-escalate worktree cleanup, agent-death recovery (resume vs. fresh decided by worktree existence) and the mandatory initial plan commit.
+tf-original (for the record): the two-mode `.ticket-flow` flag, the `branch:` lock as the only worktree→ticket back-reference, the decision gate (`## Decisions` → `## Decision Log`), the proven/residual classification with Testing-vs-Done gating, `reference-fork`, the verify-then-defer worktree cleanup, agent-death recovery (resume vs. fresh decided by worktree existence) and the mandatory initial plan commit.
 
 Evaluated and not adopted (so you don't have to): Lavra's mandatory multi-phase design pipeline, claude-protocol's "no web before code" rule and approval-free push, Knots' coverage floor, Anthropic's built-in Tasks as a beads replacement, herdr tab labels as a busy/free signal, repackaging as `npx skills add`-style agent skills.
 
