@@ -123,6 +123,7 @@ bash skills/init/tests/test_install-routing-rule.sh
 bash skills/init/tests/test_unify-worktree-path.sh
 bash skills/init/tests/test_set-worktree-baseref.sh
 bash skills/init/tests/test_install-worktree-include.sh
+bash skills/init/tests/test_set-worktree-symlinks.sh
 bash skills/bd-detox/tests/test_install-prime.sh
 bash skills/bd-detox/tests/test_bd-detox.sh
 bash skills/status/tests/test_status.sh
