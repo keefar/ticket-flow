@@ -1,7 +1,7 @@
 ---
 name: push
 description: Push the local `main` branch to its remote. Run after `/ticket-flow:finish` or a `/ticket-flow:flow` chain — both merge to `main` locally and deliberately leave the push to you. Surfaces auth/network errors immediately. Invoke as `/ticket-flow:push`.
-disable-model-invocation: true
+user-invocable: false
 ---
 
 # /ticket-flow:push — Push merged commits to origin

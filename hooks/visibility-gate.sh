@@ -10,7 +10,7 @@
 #      refs/dolt/data, past .gitignore)
 #
 # It does NOT decide whether the content is safe — that is preflight-public.sh,
-# which is slower and belongs in /ticket-flow:visibility. This hook only makes
+# which is slower and belongs in /ticket-flow:publish. This hook only makes
 # sure the decision happens at all.
 #
 # Visibility-aware on purpose. A guard that judges by host alone is wrong in
@@ -21,7 +21,7 @@
 #     known to be public, allowed when it is known not to be, and escalated to
 #     the user when unknown
 # The state is read from `git config ticket-flow.visibility`, which
-# /ticket-flow:visibility and /ticket-flow:publish set. No network, ever.
+# /ticket-flow:publish sets. No network, ever.
 #
 # Two hard constraints, both deliberate:
 #   - No network access. A PreToolUse hook that hangs does not block, it lets
@@ -56,7 +56,7 @@ fi
 
 # Deliberate override, same shape as the repo-hygiene convention: prefix the
 # command with TICKET_FLOW_VISIBILITY_OK=1. It exists so the legitimate path
-# (a green preflight plus the user's explicit yes, via /ticket-flow:visibility)
+# (a green preflight plus the user's explicit yes, via /ticket-flow:publish)
 # is not blocked by this hook. It is not a shortcut around the checks — the
 # skill sets it only after the user has answered.
 case "$CMD" in
@@ -72,7 +72,7 @@ deny() {
   echo "reachable through the fork network even after a fork is deleted, and the" >&2
   echo "transition is archived publicly. Rotation is the only remedy afterwards." >&2
   echo "" >&2
-  echo "Run /ticket-flow:visibility first — it checks the history, not just the tip." >&2
+  echo "Run /ticket-flow:publish first — it checks the history, not just the tip." >&2
   exit 2
 }
 
@@ -146,7 +146,7 @@ if [ -n "$carries_extra_refs" ]; then
       exit 0 ;;   # nothing published, nothing to guard
     *)
       ask "Repository visibility is unknown to ticket-flow" \
-          "$carries_extra_refs Set it once with: git config ticket-flow.visibility public|private|local (or run /ticket-flow:visibility)." ;;
+          "$carries_extra_refs Set it once with: git config ticket-flow.visibility public|private|local (or run /ticket-flow:publish)." ;;
   esac
 fi
 

@@ -1,5 +1,6 @@
 ---
 name: board
+user-invocable: false
 description: Generate a read-only KANBAN.md board snapshot from bd state (Mode A / `mode=beads` only). Manual, opt-in — the workflow never calls it. Invoke as `/ticket-flow:board` (write the snapshot) or `/ticket-flow:board --stdout` (preview) or `/ticket-flow:board --check` (drift check).
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: flow
-description: Orchestrator for Ticket-Flow — default is `--local` (all phases in this session with user checkpoints). `--parallel` works multiple ready tickets at once via worktree-isolated subagents in this session; `--serial` (one subagent at a time, merge+deploy+cleanup per ticket) and `--loop` (re-query the ready queue after every merge until empty) turn it into an unattended queue runner. Invoke as `/ticket-flow:flow <kanban-id>`, `/ticket-flow:flow --parallel [<id>…]` or `/ticket-flow:flow --serial --loop [--use-recommendations]`. Also trigger on any natural-language request to work on, implement, umsetzen, bearbeiten, or abarbeiten a specific bead/issue/kanban-item — not only the literal slash command. Phrasing like "implementier DSP-xyz", "setz Bead X um", "lass uns den Bead angehen", "arbeite die offenen/ready Beads ab" all count (User-Anweisung 2026-07-05: muss auch sinngemäß triggern, nicht nur wortwörtlich).
+description: Orchestrator for Ticket-Flow — default is `--local` (all phases in this session with user checkpoints). `--parallel` works multiple ready tickets at once via worktree-isolated subagents in this session; `--serial` (one subagent at a time, merge+deploy+cleanup per ticket) and `--loop` (re-query the ready queue after every merge until empty) turn it into an unattended queue runner. Invoke as `/ticket-flow:flow <kanban-id>`, `/ticket-flow:flow --parallel [<id>…]` or `/ticket-flow:flow --serial --loop [--use-recommendations]`. Also trigger on any natural-language request to work on, implement, umsetzen, bearbeiten, or abarbeiten a specific bead/issue/kanban-item — not only the literal slash command. Phrasing like "implementier DSP-xyz", "setz Bead X um", "lass uns den Bead angehen", "arbeite die offenen/ready Beads ab" all count (User-Anweisung 2026-07-05: muss auch sinngemäß triggern, nicht nur wortwörtlich). Also the resume phrasings — "mach bei X weiter", "setz die Arbeit an X fort", "continue the aborted run": flow detects the existing worktree and resumes at the right phase instead of restarting (step 1.8).
 argument-hint: <ticket-id> | --parallel [ids…] | --serial --loop
 ---
 
@@ -94,6 +94,31 @@ Before pickup, check whether the item's spec still has design decisions that nee
      - **`--use-recommendations`** → for every `D#`, pick the option marked `(recommended)`.
      - **`--decisions a,b,c`** → positional: option `a` for `D1`, `b` for `D2`, … A count mismatch (more/fewer picks than `D#` entries) or an out-of-range option number → **STOP** with an error naming the mismatch.
 3. When decisions were resolved here via a flag, **hold the picks** — they get written to the spec's `## Decision Log` in step 2.5, *after* pickup, so the log lands on the worktree branch.
+
+### 1.8. Resume instead of restart (local mode)
+
+An aborted run leaves a claimed ticket behind: status `in_progress`, a `branch:` line in the notes (set by pickup step 5), usually a live worktree. Re-running `/flow <id>` on such a ticket must **continue** it, not run pickup again — pickup would refuse on the branch-lock, and before it ever did, a second worktree would be pointless.
+
+Detect before pickup:
+
+```bash
+source "${CLAUDE_PLUGIN_ROOT}/skills/kanban/bd-helper.sh"
+BD_ID="$(bd_id_for "$ID")"
+LOCK_BRANCH="$(bd_get_notes "$BD_ID" | grep -oE 'branch: [^ |]+' | head -1 | cut -d' ' -f2)"
+```
+
+- **No `branch:` line** → fresh ticket, continue with step 2 (pickup) as normal.
+- **`branch:` line present** → a previous run claimed this ticket. Find its worktree: `git worktree list` — the entry whose branch matches `$LOCK_BRANCH`.
+  - **Worktree exists** → resume. Skip step 2 entirely; `cd` into the worktree and decide the re-entry phase from its state, not from memory:
+    1. `git -C <worktree> status --porcelain` + `git log <base>..$LOCK_BRANCH --oneline` — what is committed, what is half-done?
+    2. Read the spec's ACs (step 1.6 already resolved the spec path) and judge which are met by the code that is there.
+    3. **ACs still open, or uncommitted work** → re-enter at **step 4** (`/ticket-flow:implement` picks up the plan mid-way; its step 1 derives the item from the branch).
+    4. **All ACs look met** → re-enter at **step 6** (`/ticket-flow:finish` — its verification decides, not your impression).
+    5. Say in one line that this is a resume and which phase it re-enters.
+  - **Worktree gone but branch exists** (cleanup died between remove and merge, or the harness auto-removed it) → the commits survive on `$LOCK_BRANCH`. Recreate a worktree on that branch (`git worktree add <path> $LOCK_BRANCH`), then resume as above.
+  - **Branch gone too** → the lock is stale (a finished run that missed the note cleanup, or a discarded attempt). Say so, remove the stale `branch:` line via `bd_update_notes_remove_prefix "$BD_ID" "branch:"`, and continue with step 2 as a fresh run.
+
+`--parallel`/`--serial`/`--loop` need none of this: their claim step (P3) skips tickets that are already `in_progress`, and P4a governs a dispatched agent's death. Resume is the `--local` counterpart to P4a.
 
 ### 2. Phase 1: pickup
 

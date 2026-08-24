@@ -1,5 +1,6 @@
 ---
 name: discover
+user-invocable: false
 description: Scan the current repository for tech-stack, conventions, test setup, and anti-patterns. Writes .claude/rules/project-conventions.md, which Claude Code loads into every session, so spec generation and implementation work from the project's own conventions. Run once per project, re-run when stack changes.
 ---
 

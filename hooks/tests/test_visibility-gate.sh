@@ -54,7 +54,7 @@ r=$(run_in "" "git push --tags")
 expect_rc "plain push of the current branch passes"       public    "git push origin main" 0
 expect_rc "unrelated command passes"                      public    "ls -la" 0
 
-# The deliberate override, used by /ticket-flow:visibility after the user says yes.
+# The deliberate override, used by /ticket-flow:publish after the user says yes.
 expect_rc "explicit override passes"                      private   "TICKET_FLOW_VISIBILITY_OK=1 gh repo edit me/x --visibility public" 0
 expect_rc "…and it is not implied by anything else"       private   "gh repo edit me/x --visibility public" 2
 

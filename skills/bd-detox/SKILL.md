@@ -1,5 +1,6 @@
 ---
 name: bd-detox
+user-invocable: false
 description: Remove the anti-MEMORY.md clause from a project that already ran vanilla `bd init`, on the paths that actually reach Claude Code — the CLAUDE.md `BEADS INTEGRATION` block and bd's runtime `bd prime` output. Idempotent. Invoke as `/ticket-flow:bd-detox` (default: strip the clause, append the Coexistence Policy to CLAUDE.md, install the prime override) or `/ticket-flow:bd-detox --skip-agents` (delete AGENTS.md and the BEADS INTEGRATION block entirely).
 argument-hint: [--skip-agents] [--dry-run]
 ---
