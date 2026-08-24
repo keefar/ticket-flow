@@ -1,6 +1,6 @@
 ---
 name: push
-description: Push the local `main` branch to its remote. Run after `/ticket-flow:finish` or a `/ticket-flow:flow` chain — both merge to `main` locally and deliberately leave the push to you. Surfaces auth/network errors immediately. Invoke as `/ticket-flow:push`.
+description: Push the local `main` branch to origin — invoke when the user asks in plain words to push ("push das", "lad das hoch", "push to origin"). `finish`/`flow` deliberately leave commits local; this runs from the controller session (never a dispatched subagent) so auth prompts and errors stay visible.
 user-invocable: false
 ---
 

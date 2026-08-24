@@ -1,6 +1,6 @@
 ---
 name: status
-description: Diagnose ticket-flow project state and recommend the next action. Inspects filesystem scaffolding, mode (the .ticket-flow flag), memory hygiene (anti-MEMORY clause), in-flight worktrees, beads counts, and uncommitted changes. Invoke as `/ticket-flow:status`.
+description: Diagnose where this ticket-flow project stands and recommend the next action — trigger on "wo steht das Projekt", "wie ist der Stand", "was ist offen", "what's the state here", after a compaction, or when picking a project up cold. Inspects scaffolding, in-flight worktrees, stale branch locks, beads counts and uncommitted changes; also the recovery entry when a session was lost. Invoke as `/ticket-flow:status`.
 ---
 
 # /ticket-flow:status — Project diagnostic + recommendation

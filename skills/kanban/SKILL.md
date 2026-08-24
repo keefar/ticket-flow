@@ -1,7 +1,7 @@
 ---
 name: kanban
 user-invocable: false
-description: Use when a prompt contains a new bug/feature/change not yet tracked, or when an item's status changes (Inbox · Backlog · In Progress · Testing · Done).
+description: Use when a prompt contains a new bug/feature/change not yet tracked, or when an item's status changes — capture and maintain it in the project's beads tracker (Inbox→Backlog with Definition of Ready, priorities, the pipe-separated note format).
 ---
 
 # Kanban

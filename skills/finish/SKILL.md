@@ -1,7 +1,7 @@
 ---
 name: finish
 user-invocable: false
-description: Phase 3 of Ticket-Flow — review, optional deploy, merge branch back to main, move Kanban item to Testing, clean up worktree. Invoke as `/ticket-flow:finish` from inside the worktree.
+description: Internal phase 3 of ticket-flow, normally invoked by ticket-flow:flow — verify (tests, review, proven vs. residual ACs), optional deploy, merge to main behind the merge guard, ticket → Testing or Done, worktree cleanup. Invoke directly only to finish an already-implemented ticket whose flow run ended early.
 ---
 
 # /ticket-flow:finish — Phase 3 of Ticket-Flow

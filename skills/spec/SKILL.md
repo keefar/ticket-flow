@@ -1,6 +1,6 @@
 ---
 name: spec
-description: Create a Spec doc for a KANBAN item from SPEC-TEMPLATE.md. Interactive mode sets the Kanban note to `spec: drafting`; `--auto` drafts the whole spec non-interactively and sets `spec: review`. Invoke as `/ticket-flow:spec <kanban-id>`, `/ticket-flow:spec <kanban-id> <author>` (default author = `git config user.name`, fallback `$USER`), or `/ticket-flow:spec <kanban-id> --auto`.
+description: Draft a spec document for a tracked ticket before implementation — the entry point when the user describes a need in prose: "ich brauche …", "mach die spec", "schreib eine Spec für X", "wir sollten X bauen", "draft a spec". Captures the WHAT plus acceptance criteria and proposes open decisions with recommendations. Interactive by default (sets `spec: drafting`); `--auto` drafts the whole spec non-interactively (sets `spec: review`). Invoke as `/ticket-flow:spec <ticket-id> [author] [--auto]`.
 argument-hint: <ticket-id> [author] [--auto]
 ---
 

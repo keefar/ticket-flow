@@ -1,7 +1,7 @@
 ---
 name: implement
 user-invocable: false
-description: Phase 2 of Ticket-Flow — execute the plan for the current In-Progress Kanban item. Runs inside the worktree. Delegates to `superpowers:executing-plans`, or to subagent dispatch when the session is allowed to spawn one, depending on plan complexity. Invoke as `/ticket-flow:implement`.
+description: Internal phase 2 of ticket-flow, normally invoked by ticket-flow:flow — execute the plan for the claimed ticket inside its worktree: incremental commits, typecheck/test after each major step. Invoke directly only to continue implementing a ticket that is already picked up.
 ---
 
 # /ticket-flow:implement — Phase 2 of Ticket-Flow
