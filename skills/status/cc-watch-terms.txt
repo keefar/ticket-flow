@@ -1,0 +1,71 @@
+# Terms that make a changelog line worth a human look.
+#
+# One grep -E pattern per line, matched case-insensitively against the line.
+# Erring wide is deliberate: a false hit costs a glance, a missed change costs
+# months of a wrong assumption. Trim a term only after it has produced noise
+# repeatedly — and note here why.
+
+# --- worktrees and isolation: where tf's own machinery lives
+worktree
+isolation
+baseref
+\.worktreeinclude
+symlinkdirectories
+enterworktree
+exitworktree
+
+# --- subagents, orchestration, autonomy
+subagent
+sub-agent
+agent team
+teammate
+dispatch
+background (session|agent|task)
+autonomous
+automation
+automatic
+auto-?continue
+workflow
+parallel
+fork
+
+# --- the surfaces tf ships on
+\bhook
+\bskill
+plugin
+slash command
+frontmatter
+allowed-tools
+disable-model-invocation
+
+# --- permissions, sandbox, classifier: the layer that refuses things
+permission
+classifier
+sandbox
+auto mode
+deny
+allowlist
+dangerouslydisablesandbox
+
+# --- session lifecycle: what survives a break
+resume
+compact
+checkpoint
+rewind
+session (limit|title|start)
+usage limit
+spend limit
+cache
+
+# --- git behaviour tf depends on
+git (push|merge|worktree|commit)
+refs/
+visibility
+repository (visible|private|public)
+
+# --- the tracker
+beads
+\bbd\b
+task list
+taskcreate
+todowrite

@@ -19,3 +19,4 @@ CLAUDE.md
 
 # Claude Code worktrees — never part of the published tree
 .claude/worktrees/
+.cc-checked
