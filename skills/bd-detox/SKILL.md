@@ -78,4 +78,4 @@ Re-running on an already-detoxed project is a no-op:
 - **`CLAUDE.md` BEADS INTEGRATION block was reformatted**: matched by its header marker, not exact text. If the marker is missing, the block is reported as not found — manual cleanup needed.
 - **Custom-template-style AGENTS.md (already detoxed via init custom template)**: script detects the Memory Coexistence Policy section and treats the file as clean.
 - **`.beads/PRIME.md` written by hand**: never overwritten. If it predates this skill it may be a bare mute file — check that it still carries what a post-compaction session needs.
-- **No `.beads/`** (Mode B): script aborts — there's nothing for bd-detox to clean.
+- **No `.beads/`**: script aborts — there's nothing for bd-detox to clean.

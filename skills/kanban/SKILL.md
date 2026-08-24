@@ -4,32 +4,25 @@ user-invocable: false
 description: Use when a prompt contains a new bug/feature/change not yet tracked, or when an item's status changes — capture and maintain it in the project's beads tracker (Inbox→Backlog with Definition of Ready, priorities, the pipe-separated note format).
 ---
 
-# Kanban
+# Kanban — tracker maintenance (beads)
 
 All paths are relative to the project root (cwd / `git rev-parse --show-toplevel`):
 
-**Operational board** (hot path): bd itself in Mode A (`mode=beads`); `KANBAN.md` in Mode B (`mode=kanban`) — Inbox · Backlog · In Progress · Testing.
+**Operational board** (hot path): bd itself — Inbox · Backlog · In Progress · Testing, expressed as bd status + labels.
 **Strategic plan**: `ROADMAP.md` — epics + later + parked. Cold path, only when strategically relevant.
-**Archive**: `KANBAN-done.md` — Mode B only; on explicit demand.
 **Spec template**: `docs/specs/SPEC-TEMPLATE.md` — template for item specs.
-**Static snapshot** (Mode A, on demand): `/ticket-flow:board` writes a read-only `KANBAN.md` from bd state.
+**Static snapshot** (on demand): `/ticket-flow:board` writes a read-only `KANBAN.md` from bd state — never a workflow input.
 
-**Mode-aware behavior** (per `docs/architecture.md`) — the mode is read from the
-repo-root `.ticket-flow` flag, never inferred from `.beads/`-presence:
+bd is the **sole** source of truth. The workflow never reads or writes
+`KANBAN.md` — new items go straight to `bd create`, state moves via
+`bd-helper.sh`. (The former KANBAN.md-backed Mode B was removed — tf is
+beads-only; the dual-mode code is preserved at `refs/archive/mode-kanban`.)
 
-- **Mode A** (`mode=beads`): bd is the **sole** source of truth. The workflow
-  never reads or writes `KANBAN.md` — new items go straight to `bd create` /
-  `/ticket-flow:kanban`, state moves via `bd-helper.sh`. A static, git-diffable
-  board snapshot is available **on demand only** via `/ticket-flow:board` — it
-  is never a workflow input.
-- **Mode B** (`mode=kanban`): KANBAN.md is the source of truth — the rest of this skill applies verbatim.
+**Toolbox** (`skills/kanban/`):
 
-**Mode A toolbox** (`skills/kanban/`):
-
-- `bd-helper.sh` — sourced by `pickup`, `finish`, `flow`, and the Mode-A paths in this skill. Exposes `bd_mode` (reads `.ticket-flow`), `bd_id_for <kanban#>`, `bd_set_status`, `bd_update_notes_{append,replace_prefix,remove_prefix}`. State transitions go through `bd_set_status` (canonical inbox / backlog / in_progress / testing) plus `bd close` for Done; notes edits go through the merge-safe wrappers (never `bd update --notes=` directly — that's destructive).
-- `kanban-render.sh` — generate a read-only `KANBAN.md` snapshot from bd state. **Not part of any workflow skill** — reachable only via `/ticket-flow:board`. See that skill. It emits an `<!-- INTAKE:START -->` … `<!-- INTAKE:END -->` zone and carries its content over verbatim on every regeneration.
-- `intake-pull.sh` — the other half of that zone: turns the free-form blocks a human wrote there into bd issues. Called from **Capture new items** below. Without it the renderer preserves text nobody ever acts on.
-- `kanban-import.sh` — one-shot `kanban → beads` migration: parse an existing KANBAN.md's rows into bd. Idempotent (skips kanban-N labels already in bd). Invoked by `/ticket-flow:init --mode=beads` during the mode switch, not in the steady-state workflow.
+- `bd-helper.sh` — sourced by `pickup`, `finish`, `flow`, and this skill. Exposes `bd_id_for <kanban#>`, `bd_set_status`, `bd_update_notes_{append,replace_prefix,remove_prefix}`. State transitions go through `bd_set_status` (canonical inbox / backlog / in_progress / testing) plus `bd close` for Done; notes edits go through the merge-safe wrappers (never `bd update --notes=` directly — that's destructive).
+- `kanban-render.sh` — generate the read-only `KANBAN.md` snapshot from bd state. **Not part of any workflow skill** — reachable only via `/ticket-flow:board`. See that skill.
+- `kanban-import.sh` — one-shot `KANBAN.md → beads` migration: parse an existing board's rows into bd. Idempotent (skips kanban-N labels already in bd). Invoked by `/ticket-flow:init` when it finds a legacy KANBAN.md, not in the steady-state workflow.
 
 ## Workflow commands (Ticket-Flow)
 
@@ -39,9 +32,9 @@ repo-root `.ticket-flow` flag, never inferred from `.beads/`-presence:
 | `/ticket-flow:pickup <id>` | Phase 1 | Worktree + branch lock + move to In Progress |
 | `/ticket-flow:implement` | Phase 2 | Execute the plan (interactive or subagent dispatch) |
 | `/ticket-flow:finish` | Phase 3 | Review + deploy + merge + move to Testing |
-| `/ticket-flow:flow <id>` | Orchestrator | Phase 1 → 2 → 3 (spawn mode) or `--local` with checkpoints |
+| `/ticket-flow:flow <id>` | Orchestrator | Phase 1 → 2 → 3, `--local` with checkpoints, `--serial --loop` unattended |
 
-Direct editing of the Kanban (this skill) is still used for: capturing new items in Inbox, roadmap updates, manually verifying Testing → Done.
+This skill itself is for what the workflow commands don't cover: capturing new items, DoR triage, roadmap updates, manual Testing → Done.
 
 ## Columns
 
@@ -50,78 +43,41 @@ Direct editing of the Kanban (this skill) is still used for: capturing new items
 | 📥 Inbox | **NEVER agents** — users triage | New / to be clarified, DoR not met |
 | 📋 Backlog | Agents pick from here (topmost item) | Prioritized (= order!), DoR met |
 | 🔄 In Progress | Active work, WIP limit 1–3 | With `branch:` lock in the note |
-| 🧪 Testing | Awaiting user sign-off — row carries a `[Verify]` checklist pointer | Has a residual that needs human verification (fully-proven items skip → Done) |
+| 🧪 Testing | Awaiting user sign-off — description carries the verification checklist | Has a residual that needs human verification (fully-proven items skip → Done) |
 
 ## Actions
 
-In **Mode A** (`mode=beads`), the workflow skills (`/spec`, `/pickup`, `/finish`) drive bd state via `bd-helper.sh` and **never touch `KANBAN.md`**; this skill is only used to capture new items into bd. In **Mode B** (`mode=kanban`), the table below is the operational reference.
-
-| Trigger | Mode B action (KANBAN.md) | Mode A equivalent (bd only) |
-|---|---|---|
-| New bug / feature / change | → Inbox row (DoR usually not met yet) | `bd create --label kanban-<N> --label inbox` |
-| Items hand-written into the board's intake zone | (n/a — the board *is* the tracker) | `intake-pull.sh` — see **Capture new items** below |
-| New strategic topic | → ROADMAP.md (epic, later, or parked) | — (roadmap is not in bd) |
-| Inbox → Backlog (DoR met) | move row to Backlog at priority slot | `bd_set_status <id> backlog` |
-| Backlog → In Progress (claimed) | set `branch: <name>` in note → In Progress | `/pickup` does it via `bd_set_status in_progress` + `bd_update_notes_replace_prefix "branch:"` |
-| In Progress → Testing | move to Testing with `[Verify]` pointer; or Done if fully proven | `/finish` does it via `bd_set_status testing` + `bd_update_notes_replace_prefix "[Verify]"`, or `bd close` |
-| Verified | remove row + append to `KANBAN-done.md` | `bd close <id> --reason "verified"` |
-| Roadmap → Inbox | from ROADMAP.md → KANBAN.md Inbox | `bd create` as above |
-| Dependency | `blocked by: #X` in the note | `bd dep add <a> <b>` (a depends on b) |
-
-## Capture new items (Mode A)
-
-Two entry points, and the second one is why `intake-pull.sh` exists:
-
-1. **Straight into bd** — the normal path. `bd create …` per the template at the end of this skill.
-2. **Via the board's intake zone** — for someone who would rather jot ideas into a file than compose a `bd create`. `/ticket-flow:board` emits the zone and preserves whatever stands in it across every regeneration, so text written there survives — but it stays text until it is pulled. **Whenever this skill is invoked in Mode A and a `KANBAN.md` with a non-empty intake zone exists, drain it before doing anything else**, so a hand-written idea does not sit in the board while bd shows nothing:
-
-```bash
-if [[ -f KANBAN.md ]] && [[ -n "$(awk '/^<!-- INTAKE:START -->$/{f=1;next} /^<!-- INTAKE:END -->$/{f=0} f' KANBAN.md | tr -d '[:space:]')" ]]; then
-  "${CLAUDE_PLUGIN_ROOT}/skills/kanban/intake-pull.sh" --dry-run   # show what would be created
-  "${CLAUDE_PLUGIN_ROOT}/skills/kanban/intake-pull.sh"             # create the issues, empty the zone
-fi
-```
-
-The script parses each blank-line-separated block (first non-empty line = title, optional `tag:` / `priority:` / body / `blocks:` fields), runs `bd create` per block with an `intake-pulled` label, then empties the zone. Re-run `/ticket-flow:board` afterwards so the snapshot shows the new issues in their columns.
-
-**This does not make `KANBAN.md` a workflow input.** The zone is user-authored text being *imported once*, in the same category as `kanban-import.sh`'s one-shot migration — no skill ever *reads state* from the board. Everything outside the two markers stays generated output.
+| Trigger | bd action |
+|---|---|
+| New bug / feature / change | `bd create --label kanban-<N> --label inbox` (template below) |
+| New strategic topic | → ROADMAP.md (epic, later, or parked) — the roadmap is not in bd |
+| Inbox → Backlog (DoR met) | `bd_set_status <id> backlog` |
+| Backlog → In Progress (claimed) | `/pickup` does it via `bd_set_status in_progress` (atomic claim) + `bd_update_notes_replace_prefix "branch:"` |
+| In Progress → Testing | `/finish` does it via `bd_set_status testing` + verification checklist in the description, or `bd close` when fully proven |
+| Verified | `bd close <id> --reason "verified"` |
+| Dependency | `bd dep add <a> <b>` (a depends on b) |
 
 ## Definition of Ready (Inbox → Backlog)
-
-Exactly the 5 points from KANBAN.md "Workflow Rules":
 
 1. Tag set (`bug` · `change` · `feature`)
 2. Cluster marker in the title, if a cluster applies
 3. **Spec exists**:
    - Bug / trivial change → acceptance criterion inline in the title/note (1 sentence)
    - Feature / larger change → `[Spec](docs/specs/<id>-<slug>.md)` in the note
-4. No `blocked by: #X`
+4. No open dependency (`bd show` — depends-on all closed)
 5. No `decision: open`
 
 ## Pickup rule (agents)
 
-1. Read KANBAN.md
-2. Pick the **topmost** Backlog item that:
-   - meets DoR
-   - has no `branch:` lock in the note
-3. Set `branch: <name>` in the note (lock for parallel worktrees)
-4. Move to In Progress
+1. `bd ready`
+2. Pick the **topmost** item that meets DoR and has no `branch:` lock in the note
+3. Claim + lock happen in `/pickup` (atomic `bd update --claim`, then `branch:` note line)
 
 **From Inbox: NEVER pick directly.** Inbox items first need DoR triage (user decision).
 
-## Format
-
-```
-| {ID} | `{tag}` | {title} | {note} |
-```
-
-- **ID**: in Mode A, the renderer fills this from the `kanban-<N>` label (or the bd-id suffix when no kanban-N label). In Mode B, highest existing + 1 (check KANBAN.md AND ROADMAP.md for duplicates).
-- **Tags**: `bug` · `change` · `feature` (item type, not status)
-- **Creation date**: not stored in KANBAN.md (recoverable from git log or bd). `KANBAN-done.md` (Mode B) keeps a `Verified` date column since that's the audit-relevant timestamp.
-
 ## Cluster markers
 
-Active clusters are defined in `KANBAN.md` table "Active Clusters". Items get the marker as a prefix in the title, wrapped in backticks:
+Items get the marker as a prefix in the title, wrapped in backticks:
 
 ```
 `[mess-align]` Multipoint measurement
@@ -129,11 +85,7 @@ Active clusters are defined in `KANBAN.md` table "Active Clusters". Items get th
 `[ui]` Sidebar as drawer
 ```
 
-New cluster? First update the table in KANBAN.md, then set the marker. Greppable:
-
-```bash
-grep -E '\[mess-align\]|\[tauri-dist\]|\[ui\]' KANBAN.md ROADMAP.md
-```
+Greppable via `bd list` output or the board snapshot.
 
 ## Note format (pipe-separated, greppable)
 
@@ -143,7 +95,7 @@ grep -E '\[mess-align\]|\[tauri-dist\]|\[ui\]' KANBAN.md ROADMAP.md
 
 Empty note: `—`.
 
-`[Verify]` points at the `## Verification` section of the spec doc — added by `/ticket-flow:finish` when an item moves to Testing (see the finish skill). Spec-less items carry the (tiny) verification checklist inline instead.
+`[Verify]` points at the `## Verification` section of the spec doc — added by `/ticket-flow:finish` when an item moves to Testing (the standalone checklist itself goes into the issue **description**, see the finish skill). Spec-less items carry the (tiny) verification checklist inline instead.
 
 **Spec vs. plan:**
 - **Spec** (`docs/specs/<id>-<slug>.md`): WHAT should be achieved — context, acceptance criteria, out of scope, references. Item-specific, mandatory for features / larger changes before Backlog.
@@ -167,12 +119,11 @@ Empty note: `—`.
 
 ## Approach
 
-1. **Mode A** (`mode=beads`): change bd only — via `/spec`, `/pickup`, `/finish`, or direct `bd ...` for ad-hoc work. **Never read or write `KANBAN.md`** — bd is the source of truth. The single exception is the intake zone (see **Capture new items**): user-authored text imported into bd, never state read back out. For a static board snapshot, run `/ticket-flow:board` on demand; it is the *only* place KANBAN.md is generated in beads mode, and never an input to any other skill.
-2. **Mode B** (`mode=kanban`): `Read` KANBAN.md (hot path). ROADMAP.md only if strategically relevant or for cluster lookup. Triage Inbox (DoR missing) vs Backlog (DoR met) vs Roadmap (strategic). Minimal change — only what changed. Keep the note in pipe format. Set cluster markers where appropriate. For bug log / spec / plan: create + link. Short mention in the response: `📋 Kanban: #70 → Testing`.
+Change bd only — via `/spec`, `/pickup`, `/finish`, or direct `bd …` for ad-hoc work. **Never read or write `KANBAN.md`** — bd is the source of truth; the board snapshot (`/ticket-flow:board`) is generated output, never an input. Short mention in the response: `📋 #70 → Testing`.
 
 **Do not update**: purely informational task (question, explanation) or item already at the right status.
 
-## bd reference (Mode A only)
+## bd reference
 
 - **Ready work**: `bd ready` — unblocked open items
 - **`bd create` template**:

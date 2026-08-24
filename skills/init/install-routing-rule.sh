@@ -42,8 +42,8 @@ skill-trigger order.
 
 **For any prompt that proposes a change, feature, bug, refactor, or idea**:
 
-1. `bd create --title="…" --type=feature|bug|task` (or capture in `KANBAN.md`
-   Inbox if `mode=kanban`) — the tracker is the only place work is recorded
+1. `bd create --title="…" --type=feature|bug|task` — the tracker is the only
+   place work is recorded
 2. `/ticket-flow:spec <id>` — draft the spec
 3. `/ticket-flow:pickup <id>` — worktree + branch
 4. Implement → `/ticket-flow:finish`

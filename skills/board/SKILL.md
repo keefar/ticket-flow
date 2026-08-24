@@ -40,21 +40,17 @@ change, use `beads-ui` for the live view instead.
 
 ## Prerequisites
 
-- Mode A (`mode=beads` in the repo-root `.ticket-flow` flag). In Mode B
-  (`mode=kanban`) `KANBAN.md` *is* the source of truth — there is nothing to
-  render; the skill reports that and exits.
+- A beads project (`.beads/` present). A leftover `mode=kanban` flag makes
+  `bd_mode` refuse with a migration pointer.
 - `bd` and `jq` on `PATH`.
 
 ## Steps
 
-1. **Confirm the mode.** Source `skills/kanban/bd-helper.sh` and check `bd_mode`:
+1. **Confirm bd is usable.** Source `skills/kanban/bd-helper.sh` and check:
 
    ```bash
    source "${CLAUDE_PLUGIN_ROOT}/skills/kanban/bd-helper.sh"
-   if [[ "$(bd_mode)" != "A" ]]; then
-     echo "/ticket-flow:board is Mode A (mode=beads) only — this project is mode=kanban; KANBAN.md is already the source of truth." >&2
-     exit 0
-   fi
+   bd_available || { echo "no usable beads tracker here" >&2; exit 1; }
    ```
 
 2. **Run the renderer.** `kanban-render.sh` does the work (groups bd issues into
@@ -81,5 +77,4 @@ change, use `beads-ui` for the live view instead.
 - It is **not** a workflow step — `/spec`, `/pickup`, `/finish`, `/flow`,
   `/kanban` never invoke it and never read its output.
 - It does not write bd state — purely read-only on bd.
-- It does not run in Mode B — there is no bd to render from.
 - It does not push or commit — committing the snapshot is the user's choice.

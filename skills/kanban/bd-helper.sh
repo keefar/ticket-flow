@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# bd-helper.sh — shared helpers for Mode-aware skills (pickup, finish, kanban).
+# bd-helper.sh — shared helpers for the ticket-flow skills (pickup, finish, kanban).
 #
 # Sourced by other skill scripts. Provides:
-#   bd_available           — exits 0 if Mode A (flag says `beads` + bd binary in PATH), 1 otherwise
-#   bd_mode                — echoes "A" (beads) or "B" (kanban), resolved from the
-#                            repo-root `.ticket-flow` flag file
+#   bd_available           — exits 0 if the bd binary is in PATH, 1 otherwise
+#   bd_mode                — echoes "A" (kept for callers that still branch on it;
+#                            tf is beads-only since t1z.2 — errors out loudly on a
+#                            legacy `mode=kanban` flag)
 #   bd_id_for <ref>        — resolves kanban# → bd-id by scanning labels (`kanban-<N>`)
 #                            on stdout. Args that already look like a bd-id
 #                            (`<prefix>-<suffix>`, not a kanban number) are echoed
@@ -17,11 +18,11 @@
 #   bd_set_status <bd-id> <state>  — wraps the right bd commands per kanban transition
 #                                     state ∈ inbox|backlog|in_progress|testing|done
 #
-# Mode flag: a repo-root `.ticket-flow` file, single line `mode=beads` or
-# `mode=kanban`, written once by `/ticket-flow:init` (asks interactively or
-# accepts `--mode=kanban|beads`). `bd_mode` reads that flag — `mode=beads` → A,
-# `mode=kanban` → B. Legacy fallback: when `.ticket-flow` is absent (projects
-# that predate the flag), fall back to `.beads/`-presence detection.
+# Mode flag, historical: a repo-root `.ticket-flow` file used to select between
+# beads (A) and KANBAN.md (B). Mode B was removed (beads-only); the flag is no
+# longer written. A leftover `mode=kanban` flag means an unmigrated project —
+# bd_mode refuses with a migration pointer instead of guessing. The pre-removal
+# code is preserved at refs/archive/mode-kanban.
 #
 # Sandbox: bd writes need `dangerouslyDisableSandbox: true`. Read-only calls
 # (bd list, bd show) work in normal sandbox.
@@ -51,24 +52,18 @@ __bd_flag_mode() {
 }
 
 bd_mode() {
-  local flag
-  flag="$(__bd_flag_mode)"
-  case "$flag" in
-    beads)  echo "A" ;;
-    kanban) echo "B" ;;
-    *)
-      # Legacy fallback: no `.ticket-flow` flag (project predates it).
-      if [[ -d .beads ]]; then
-        echo "A"
-      else
-        echo "B"
-      fi
-      ;;
-  esac
+  if [[ "$(__bd_flag_mode)" == "kanban" ]]; then
+    echo "ERROR: mode=kanban was removed — tf is beads-only. Migrate with" >&2
+    echo "  /ticket-flow:init  (imports KANBAN.md into beads)" >&2
+    echo "or check out refs/archive/mode-kanban for the old dual-mode code." >&2
+    return 1
+  fi
+  echo "A"
 }
 
 bd_available() {
-  [[ "$(bd_mode)" == "A" ]] && command -v bd >/dev/null 2>&1
+  bd_mode >/dev/null || return 1
+  command -v bd >/dev/null 2>&1
 }
 
 # Resolve kanban# → bd-id by scanning labels. Caches the bd list output in memory.

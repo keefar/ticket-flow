@@ -68,6 +68,6 @@ Items not in any of these classes are surfaced as "NO ACTION NEEDED" so the user
 ## Edge cases
 
 - **No git repo**: script reports `(not a git repo — run \`git init\` first)` and skips git-dependent checks
-- **No `.beads/`**: Mode B is reported; bd-specific lines are omitted (no "Beads: 0 total" noise)
-- **No `KANBAN.md`**: *mode-dependent*. In `mode=kanban` the board is the source of truth → marked missing, first recommendation = `/ticket-flow:init`. In `mode=beads` it is **not** a gap: the board is opt-in there, rendered on demand by `/ticket-flow:board` and never a workflow input (`docs/architecture.md`), so demanding it would report a defect in the one mode the architecture rules it out for. A board that *is* present shows up as `KANBAN.md (board snapshot, optional)`. The legacy fallback (no `.ticket-flow` flag, `.beads/` present) follows the beads rule.
+- **No `.beads/`**: reported as unscaffolded; bd-specific lines are omitted (no "Beads: 0 total" noise), first recommendation = `/ticket-flow:init`
+- **No `KANBAN.md`**: **not** a gap — the board is opt-in, rendered on demand by `/ticket-flow:board` and never a workflow input. A board that *is* present shows up as `KANBAN.md (board snapshot, optional)`.
 - **Detached HEAD / worktree branch**: shown as branch name; not flagged as a problem

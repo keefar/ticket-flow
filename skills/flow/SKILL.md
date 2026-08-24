@@ -74,9 +74,7 @@ eval "$("${CLAUDE_PLUGIN_ROOT}/skills/pickup/detect-worktree.sh")"   # LINKED WO
 
 Before pickup, check whether the item's spec still has design decisions that need a human pick.
 
-1. **Find the spec** — the `[Spec]` link in the item's note is the **canonical** source of the spec path (projects lay specs out differently — e.g. superpowers-based projects use `docs/superpowers/specs/<date>-<name>.md`); the convention `docs/specs/<id>-*.md` (first match) is only the last-resort fallback for items without a link. Where the note lives is decided by the `.ticket-flow` mode flag:
-   - **Mode A** (`mode=beads`): source `skills/kanban/bd-helper.sh`; `BD_ID="$(bd_id_for "$ID")"`; `SPEC_PATH="$(bd_get_notes "$BD_ID" | grep -oE '\[Spec\]\([^)]+\)' | head -1 | sed 's/^\[Spec\](\(.*\))$/\1/')"`. Empty → convention fallback. **Do not read `KANBAN.md`.** No spec found → no gate, continue.
-   - **Mode B** (`mode=kanban`): the `[Spec](<spec-path>)` link in the `<id>` row's note in KANBAN.md; same fallback. No spec found → no gate, continue to step 2.
+1. **Find the spec** — the `[Spec]` link in the item's note is the **canonical** source of the spec path (projects lay specs out differently — e.g. superpowers-based projects use `docs/superpowers/specs/<date>-<name>.md`); the convention `docs/specs/<id>-*.md` (first match) is only the last-resort fallback for items without a link. Source `skills/kanban/bd-helper.sh`; `BD_ID="$(bd_id_for "$ID")"`; `SPEC_PATH="$(bd_get_notes "$BD_ID" | grep -oE '\[Spec\]\([^)]+\)' | head -1 | sed 's/^\[Spec\](\(.*\))$/\1/')"`. Empty → convention fallback. **Do not read `KANBAN.md`.** No spec found → no gate, continue to step 2.
 2. **Read the spec.** Does it have a `## Decisions` section with `### D1…` entries?
    - **No `## Decisions` section** → nothing to resolve, continue to step 2.
    - **`## Decisions` present AND a `## Decision Log` that covers every `D#`** → already resolved (locked via the `/ticket-flow:spec` review step), continue to step 2.
@@ -191,7 +189,7 @@ On OK: `Skill(ticket-flow:finish)`. On failure: stop, inform the user. No auto r
 
 ### 7. Final report
 
-In **Mode A** (`mode=beads`), after `/finish` closes the bd state, build the report from bd — there is no KANBAN.md in beads mode:
+After `/finish` closes the bd state, build the report from bd:
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/skills/kanban/bd-helper.sh"
@@ -208,13 +206,10 @@ Then format:
 Pickup: ✓ branch <branch> + worktree
 Implement: ✓ <count> commits + typecheck/test green
 Finish: ✓ merge to main + deploy <version>
-Bd state: <BD_STATUS> · labels: <BD_LABELS>   # Mode A only
-Kanban → Testing                              # Mode B equivalent
+Bd state: <BD_STATUS> · labels: <BD_LABELS>
 
 Manual verification pending.
 ```
-
-In **Mode B** (`mode=kanban`) the original KANBAN.md → Testing wording is correct verbatim.
 
 ## Parallel mode (`--parallel`)
 
@@ -237,11 +232,11 @@ Prints `BASE_REF`, `HAS_REMOTE`, `DRIFT`, `VERDICT` and exits non-zero on `VERDI
 
 ### P1. Resolve the ticket set
 
-- **No id** → the whole ready queue: `bd ready` (Mode A, `mode=beads`) or the Backlog section of KANBAN.md (Mode B, `mode=kanban`). Keep only DoR-met items (same DoR as `/ticket-flow:pickup` step 2).
+- **No id** → the whole ready queue: `bd ready`. Keep only DoR-met items (same DoR as `/ticket-flow:pickup` step 2).
 - **Explicit ids** → validate each is in Backlog + DoR-met; a bad id aborts the whole batch with a clear error.
 - **Empty set** → report "nothing ready" and stop.
 - **Order** (matters in `--serial`/`--loop`, harmless otherwise): priority P0→P4 first; within a priority, tickets that unblock the most others (`bd show` dependents) first; then bugs with correctness/safety impact before features/comfort. Explicit ids keep the user's order.
-- **Testing sweep (`--loop` only, before new work)**: list `testing` items (Mode A: label `testing`; Mode B: the Testing section) and verify each against the **code state**, not the item text — does the test/code/config evidence now prove it? What is agent-provable gets closed with the evidence as close reason; what genuinely needs the user's senses/hardware stays. Never re-implement a Testing item.
+- **Testing sweep (`--loop` only, before new work)**: list the items labeled `testing` and verify each against the **code state**, not the item text — does the test/code/config evidence now prove it? What is agent-provable gets closed with the evidence as close reason; what genuinely needs the user's senses/hardware stays. Never re-implement a Testing item.
 
 ### P2. Decision gate — all tickets, up front
 
@@ -251,9 +246,7 @@ Run the step 1.6 decision gate for **every** ticket in the set. If **any** ticke
 
 ### P3. Mark all tickets In Progress (controller, sequential)
 
-Before dispatch, the **controller** moves every ticket Backlog → In Progress — sequentially, in the main repo. **Only the controller ever writes `.beads/` (Mode A) / KANBAN.md (Mode B).** Subagents never touch ticket state — that keeps `.beads/issues.jsonl` (or KANBAN.md) from diverging across worktrees and merge-conflicting.
-
-**Mode A** (`mode=beads`) — write to bd only, **no KANBAN.md, no render**:
+Before dispatch, the **controller** moves every ticket Backlog → In Progress — sequentially, in the main repo. **Only the controller ever writes `.beads/`.** Subagents never touch ticket state — that keeps `.beads/issues.jsonl` from diverging across worktrees and merge-conflicting. Write to bd only, **no KANBAN.md, no render**:
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/skills/kanban/bd-helper.sh"
@@ -263,8 +256,6 @@ BD_ID="$(bd_id_for "$ID")"; bd_set_status "$BD_ID" in_progress \
 ```
 
 `bd_set_status in_progress` **claims** the issue (`bd update --claim`, atomic, idempotent for the same user); a non-zero return means another session/assignee holds it — skip that ticket (`--loop`: report it as taken), never dispatch on a bead someone else is working.
-
-**Mode B** (`mode=kanban`) — per ticket, move the row Backlog → In Progress in KANBAN.md (same edit `/ticket-flow:pickup` step 5 Mode B does).
 
 The `branch:` lock marker is **not** set here — each subagent's branch (`worktree-agent-<hash>`) only exists once its worktree is created. In `--parallel` the controller tracks the branch↔ticket mapping in-session instead.
 
@@ -363,7 +354,7 @@ For each ticket whose subagent succeeded, **one at a time** — never two at onc
 1. **Verify the commits are on the expected branch** (mandatory, before any merge attempt): `git branch --contains <sha>` with the last-commit sha from the verdict (`SHA`) — the expected `worktree-agent-<hash>` branch must appear. `isolation: worktree` dispatches occasionally commit straight onto the base branch instead, and the subagent's report still reads like success; only this check catches it. If the expected branch is missing: `git rebase <target-branch>` run inside that worktree replays the commit onto the right base without losing it — then re-run the check. Do not merge until it passes.
 2. `cd <main-repo>` — commit dirty `.beads/` yourself, exactly as in `skills/finish/SKILL.md` step 5c: skip when `.beads/` is gitignored (`git check-ignore -q .beads/issues.jsonl`), otherwise `git add` the dirty `.beads/` exports and `git commit -m "chore: bd-Export-Sync vor Merge"` on the target branch — never leave it to the user (a dirty `.beads/` makes every merge refuse with "Your local changes … would be overwritten").
 3. `git merge <worktree-agent-branch>` — on a conflict: stop this ticket, leave it for the user, continue with the rest.
-4. Finish the ticket: run `skills/finish/SKILL.md` steps 6–7 — gating (residual → Testing, none → Done) from the subagent's classification, the state update (bd in Mode A, KANBAN.md in Mode B — never `kanban-render.sh` in the workflow), and worktree cleanup **behind finish Step 7's guard**: first `git -C <main-repo> merge-base --is-ancestor <worktree-agent-branch> <target-branch>` (fails → the merge in step 3 did not land, e.g. it ran from a cwd where that branch was already HEAD and printed "Already up to date" — **stop this ticket, no cleanup, no `-D`**) and `git -C <path> status --porcelain` empty; only then **`git worktree remove <path>`**. No `git worktree unlock` first: since 2.1.157 a Claude-managed worktree is left **unlocked** when its agent ends (often removed by the harness outright), so the lock is gone by the time the controller cleans up — a lock that *is* still there means a live session holds the worktree, and forcing past it is wrong. Then `git branch -D <worktree-agent-branch>` (safe only because the guard proved containment). On an `Operation not permitted` from the remove, apply finish Step 7's verify-then-defer rule: `git worktree list` decides (the error is often fake); if the path survives, leave it standing and hand the manual commands to the user — never delete the directory yourself. A `cannot remove a locked working tree` is the other error and is not ambiguous: `git worktree list` names the lock's owning pid — gone (a crashed agent's stale lock) → `git worktree unlock <path>` and retry the removal once; alive → a session still holds it, leave it.
+4. Finish the ticket: run `skills/finish/SKILL.md` steps 6–7 — gating (residual → Testing, none → Done) from the subagent's classification, the state update (bd only — never `kanban-render.sh` in the workflow), and worktree cleanup **behind finish Step 7's guard**: first `git -C <main-repo> merge-base --is-ancestor <worktree-agent-branch> <target-branch>` (fails → the merge in step 3 did not land, e.g. it ran from a cwd where that branch was already HEAD and printed "Already up to date" — **stop this ticket, no cleanup, no `-D`**) and `git -C <path> status --porcelain` empty; only then **`git worktree remove <path>`**. No `git worktree unlock` first: since 2.1.157 a Claude-managed worktree is left **unlocked** when its agent ends (often removed by the harness outright), so the lock is gone by the time the controller cleans up — a lock that *is* still there means a live session holds the worktree, and forcing past it is wrong. Then `git branch -D <worktree-agent-branch>` (safe only because the guard proved containment). On an `Operation not permitted` from the remove, apply finish Step 7's verify-then-defer rule: `git worktree list` decides (the error is often fake); if the path survives, leave it standing and hand the manual commands to the user — never delete the directory yourself. A `cannot remove a locked working tree` is the other error and is not ambiguous: `git worktree list` names the lock's owning pid — gone (a crashed agent's stale lock) → `git worktree unlock <path>` and retry the removal once; alive → a session still holds it, leave it.
 5. On a reported hard blocker: file the escalation bead now, controller-side, per `skills/implement/SKILL.md` § Escalation on a hard blocker.
 
 **`--serial` additions** (between step 3 and step 4): **3b. Deploy from the merged target branch** — if the project defines a deploy (finish Step 4's project deploy step, or a standing order in the project's CLAUDE.md), the **controller** runs it now, from `<main-repo>` on the freshly merged `<target-branch>`; the subagent was told not to. One deploy target, never concurrent, always the merged state. A failed deploy **stops the run** (no rollback, everything left for inspection — same rule as finish). Then step 4 as above (state update + guarded cleanup).
