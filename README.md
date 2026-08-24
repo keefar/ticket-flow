@@ -1,16 +1,28 @@
 # ticket-flow
 
-A **beads-backed** ticket workflow for Claude Code — a spec → pickup → implement → finish pipeline plus an orchestrator, every ticket worked in its own isolated git worktree. [beads](https://github.com/gastownhall/beads) (a Dolt-backed issue tracker) is the source of truth: dependency graph, ready-computation, cross-session persistence.
+A beads-backed ticket workflow for Claude Code: describe what you need in plain words, and every piece of work becomes a tracked ticket with a spec, its own git worktree, a verified implementation, and a guarded merge — driven by one orchestrator command, or fully unattended until the ready queue is empty.
 
-The slash menu shows **five commands** — the ones a human actually types:
+## Who this is for
 
-- `/ticket-flow:flow <id>` — the orchestrator and everyday entry point: `--local` (default — all phases in this session with checkpoints), `--parallel` (work multiple ready tickets at once via worktree-isolated subagents), or `--serial --loop` (unattended queue runner: one subagent at a time, merge + deploy + cleanup per ticket, re-query the ready queue until it is empty; pair with `--use-recommendations`). Subagent reports end in a JSON verdict that `skills/flow/verdict-check.sh` validates before any merge (no merge on prose)
-- `/ticket-flow:spec <id>` — create a spec doc from template; `--auto` drafts the whole spec non-interactively
-- `/ticket-flow:init` — scaffold a project for ticket-flow (run once)
-- `/ticket-flow:status` — diagnose the project and recommend the next action; also the recovery entry after a lost session
-- `/ticket-flow:publish` — everything that makes a repo more public than it is: report the publication state (local, private, public), run the offline preflight over the whole history, perform the guarded transition, or create the GitHub repo in the first place (`<owner>/<name> <visibility>`). Going public exposes history and cannot be undone — that is why this is the one deliberately manual step
+**For you, if** you run Claude Code on projects where work arrives faster than it gets done — you want a backlog that survives sessions and compactions, tickets worked in isolation instead of on a shared checkout, and an autopilot you can trust to merge only what a machine-checked verdict proved. Solo developers with many parallel projects are the primary audience: everything works locally, nothing requires a remote, a team, or a CI pipeline.
 
-The remaining skills are **internal** (`user-invocable: false` — the model invokes them, they stay out of the slash menu): the three phases `pickup` (validate Definition of Ready, create or adopt a worktree, branch lock, atomic claim), `implement` (execute the plan inside the worktree) and `finish` (verify, optional deploy, merge behind a merge guard, item → Testing with a verification checklist or straight to Done); plus `kanban` (board maintenance), `board` (read-only `KANBAN.md` snapshot from bd state), `discover` (project-conventions scan), `bd-detox` (strip the anti-memory clause from vanilla `bd init` projects) and `push` (push `main` from the controller session — `flow`/`finish` deliberately leave commits local; ask for a push in plain words and the model runs it from the right session).
+**Not for you, if** you want a PR-based team workflow (tf merges locally and never pushes on its own), a GUI board as the source of truth (the tracker is [beads](https://github.com/gastownhall/beads), a CLI/Dolt database; boards are generated snapshots), or a tool that works without Claude Code (the skills are Claude Code plugin skills — there is no standalone CLI).
+
+## What it does
+
+The problem: agentic coding sessions lose their thread. Work started in one session is invisible to the next, half-done branches pile up, "done" is whatever the last message claimed, and parallel agents step on each other's files and merge each other's mistakes.
+
+ticket-flow's answer, in one sentence each:
+
+- **State lives in a tracker, not in the conversation** — beads holds tickets, dependencies, ready-computation and notes; any session can pick up where any other stopped.
+- **Every ticket gets its own git worktree** — implementation never touches your checkout; a branch lock in the ticket's notes ties worktree, branch and ticket together.
+- **Nothing merges on prose** — a dispatched agent must end its report with a machine-validated JSON verdict (branch, SHA, per-AC proven/residual, test status, review result); the merge itself runs behind an ancestry + clean-tree guard before anything is deleted.
+- **"Done" is earned, not declared** — acceptance criteria are classified proven vs. residual; only fully-proven tickets close, everything else lands in Testing with a self-contained verification checklist for a human.
+- **Publication is a deliberate act** — a shipped hook refuses `gh repo create --public`, visibility flips and ref-carrying pushes until the history preflight ran and you said yes.
+
+## How it works
+
+Five commands are visible in the slash menu; the phases themselves are internal skills the model invokes (they stay out of your way — you talk to `flow`, or just describe what you need in prose):
 
 ```
 spec ──► pickup ──► implement ──► finish ──► Testing / Done
@@ -20,11 +32,15 @@ spec ──► pickup ──► implement ──► finish ──► Testing / D
           └──────────── /ticket-flow:flow <id> ────────────┘   (--parallel | --serial --loop)
 ```
 
-Optional hooks (drafts in `hooks/`, **not auto-installed** — each file's header says how): `session-title.py` names the terminal tab `<project> · <bead-id>` (Claude Code adds its busy/idle glyph) via `hookSpecificOutput.sessionTitle` on SessionStart/UserPromptSubmit; `research-first-on-toolerror.sh` injects a research-first reminder when a Bash call looks like a failure.
+Three ways to run it:
 
-## Backend
+- **`/ticket-flow:flow <id>`** (default `--local`) — all phases in this session, a checkpoint between each. An aborted run resumes instead of restarting: flow finds the ticket's worktree via the branch lock and re-enters at the right phase.
+- **`/ticket-flow:flow --parallel [<id>…]`** — one worktree-isolated subagent per ready ticket, dispatched concurrently; the controller session merges strictly sequentially, one consolidated checkpoint before any merge.
+- **`/ticket-flow:flow --serial --loop --use-recommendations`** — the unattended queue runner: one subagent at a time, verdict gate → merge guard → merge → deploy → cleanup per ticket, then re-query the ready queue until it is empty. Testing items are swept against the code state first; tickets with open decisions are deferred, not blocking.
 
-bd (beads) is the sole source of truth — no workflow skill reads or writes `KANBAN.md`; `/ticket-flow:board` regenerates a static snapshot on demand. A legacy `KANBAN.md` (from the removed dual-mode era, or hand-maintained) is imported into bd and archived by `/ticket-flow:init` — a one-way migration. The former `mode=kanban`, with `KANBAN.md` as the source of truth, was removed; the last dual-mode state is preserved at the local ref `refs/archive/mode-kanban`.
+The backend is beads only: no workflow skill reads or writes `KANBAN.md`; `/ticket-flow:board` regenerates a read-only snapshot on demand. A legacy hand-maintained `KANBAN.md` is imported into bd and archived by `/ticket-flow:init` — a one-way migration. (An earlier dual-mode with `KANBAN.md` as source of truth was removed; the last dual-mode state is preserved at the local ref `refs/archive/mode-kanban`.)
+
+Network stays yours: `flow` and `finish` merge locally and never push. Ask for a push in plain words (the internal `push` skill runs it from the controller session, where auth prompts are visible), or use `/ticket-flow:publish` for everything that makes the repo more public than it is.
 
 ## Installation
 
@@ -37,14 +53,14 @@ bd (beads) is the sole source of truth — no workflow skill reads or writes `KA
 
 ### Local development
 
-Drop the repo into `~/_Code/claude/plugins/ticket-flow/` (or any directory of your choosing), then add to `~/.claude/settings.json`:
+Drop the repo into a plugins directory of your choosing (e.g. `~/claude-plugins/ticket-flow/`), then add to `~/.claude/settings.json`:
 
 ```json
 {
   "extraKnownMarketplaces": {
     "ticket-flow-local": {
       "source": "directory",
-      "path": "~/_Code/claude/plugins"
+      "path": "~/claude-plugins"
     }
   },
   "enabledPlugins": {
@@ -53,7 +69,7 @@ Drop the repo into `~/_Code/claude/plugins/ticket-flow/` (or any directory of yo
 }
 ```
 
-Restart Claude Code after editing settings. The skills are then available in every project.
+Restart Claude Code after editing settings. The skills are then available in every project. Edits to `skills/**/SKILL.md` take effect immediately in open sessions; a new or renamed skill (or changed frontmatter) needs a `/plugin` reload or session restart.
 
 ## Dependencies
 
@@ -61,10 +77,9 @@ Restart Claude Code after editing settings. The skills are then available in eve
 
 - **Git** ≥ 2.5 (needs `git worktree`)
 - **bash** — the helper scripts are macOS bash 3.2 compatible
-- the **superpowers** plugin — the implement/finish phases delegate to it (`executing-plans`, `verification-before-completion`, `finishing-a-development-branch`, `requesting-code-review`). Install it alongside ticket-flow from the plugin marketplace.
-
 - **`bd`** — the [beads](https://github.com/gastownhall/beads) CLI; the source of truth
 - **`jq`** — required for the skill logic (item resolution, board render). Not optional.
+- the **superpowers** plugin — the implement/finish phases delegate to it (`executing-plans`, `verification-before-completion`, `finishing-a-development-branch`, `requesting-code-review`). Install it alongside ticket-flow from the plugin marketplace.
 
 **Optional:**
 
@@ -74,35 +89,93 @@ Restart Claude Code after editing settings. The skills are then available in eve
 
 ticket-flow needs no macOS-specific tooling — `--local` and `--parallel` run anywhere git does.
 
-## Project requirements
+## Reference
 
-The plugin operates on these conventions in each project (all scaffolded by `/ticket-flow:init`):
+### Visible commands
+
+| Command | Arguments / flags | What it does |
+|---|---|---|
+| `/ticket-flow:flow` | `<id>` · `[branch-suffix]` · `--local` (default) · `--parallel [ids…]` · `--serial` (implies `--parallel`; one subagent at a time, controller deploys after each merge) · `--loop` (implies `--parallel`; re-query the ready queue until empty, takes no ids) · `--here` (adopt the current external worktree; local only) · `--decisions a,b,c` (positional picks per spec decision; local only) · `--use-recommendations` (take every `(recommended)` option — the companion flag for unattended runs) | The orchestrator: runs pickup → implement → finish, resumes aborted runs, dispatches and merges parallel/serial subagents behind the verdict gate and merge guard |
+| `/ticket-flow:spec` | `<id>` · `[author]` · `--auto` (non-interactive full draft, sets `spec: review`) | Draft a spec (WHAT + acceptance criteria + open decisions with recommendations) from `docs/specs/SPEC-TEMPLATE.md` |
+| `/ticket-flow:init` | `[--skip-agents]` plus `bd init` pass-throughs (`--prefix`, `--stealth`, …); `--mode=kanban` is refused | One-time scaffold: `bd init` with tf's agents template, spec dirs, worktree settings (`baseRef`, `.worktreeinclude`, symlinked dependency dirs, routing rule), migrates a legacy `KANBAN.md` into bd |
+| `/ticket-flow:status` | — | Diagnose project state (scaffolding, in-flight worktrees, stale locks, beads counts, uncommitted changes) and recommend the next action; recovery entry after a lost session |
+| `/ticket-flow:publish` | *(none)* report · `check` preflight only · `public\|private\|local` guarded transition · `<owner>/<name> <public\|private\|internal>` first-time repo creation + push | Everything that makes the repo more public than it is — always preflight + explicit consent before `public`. Deliberately manual (`disable-model-invocation`) |
+
+### Internal skills (`user-invocable: false` — model-invoked, out of the slash menu)
+
+| Skill | Role |
+|---|---|
+| `pickup` | Phase 1: validate Definition of Ready, create **or adopt** a worktree (orca, Conductor, worktrunk, plain `git worktree add` — auto-detected, `--here` makes it explicit), set the `branch:` lock, atomic claim (`bd update --claim`) → In Progress |
+| `implement` | Phase 2: execute the plan inside the worktree — incremental commits, typecheck/test per step |
+| `finish` | Phase 3: verify (tests, review, proven vs. residual per AC), optional project deploy, merge behind the merge guard, ticket → Testing (with checklist in the issue description) or Done, guarded worktree cleanup |
+| `kanban` | Tracker maintenance: capture new items, DoR triage, note format, status moves |
+| `board` | Read-only `KANBAN.md` snapshot from bd (`--stdout`, `--check` for drift) — never a workflow input |
+| `discover` | Scan the repo → `.claude/rules/project-conventions.md` (loaded by Claude Code in every session) |
+| `bd-detox` | Strip vanilla `bd init`'s anti-memory clause from existing projects (`--skip-agents`, `--dry-run`, `--no-prime`) |
+| `push` | Push local `main` to origin from the controller session — invoked when you ask in plain words; `flow`/`finish` deliberately leave commits local |
+
+### Hooks
+
+Shipped and auto-registered via `hooks/hooks.json`:
+
+- **`visibility-gate.sh`** (PreToolUse, Bash) — refuses `gh repo create --public`, `gh repo edit --visibility public` and ref-carrying pushes. Judges by `git config ticket-flow.visibility` (`public` · `private` · `local`; set by `/ticket-flow:publish`), escalates to you when the state is unknown. Deliberate override: prefix the command with `TICKET_FLOW_VISIBILITY_OK=1` — the legitimate path `/ticket-flow:publish` uses after preflight + consent, never a way to skip them.
+- **`verdict-gate.sh`** (SubagentStop) — validates a dispatched ticket agent's JSON verdict *while the agent still exists*, handing back the defect list so a missing verdict costs one turn instead of a re-dispatch. Fires only inside `.claude/worktrees/` checkouts of ticket-flow projects; blocks at most once per agent.
+
+Drafts in `hooks/`, **not** auto-installed (each file's header says how): `session-title.py` (terminal tab `<project> · <bead-id>` via `sessionTitle`), `research-first-on-toolerror.sh` (research-first reminder on failed Bash calls).
+
+### Helper scripts
+
+All bash 3.2-compatible, resolving their own directory via `$(dirname "$0")`; skills call them as `${CLAUDE_PLUGIN_ROOT}/skills/<name>/<script>`. Tested where a `tests/` directory sits next to them.
+
+| Script | Purpose |
+|---|---|
+| `kanban/bd-helper.sh` | Shared core: id mapping (`bd_id_for`), `bd_set_status` (atomic claim on `in_progress`), merge-safe notes wrappers (`bd_update_notes_{append,replace_prefix,remove_prefix}` — never write notes with a bare `bd update --notes=`, it overwrites the whole field); refuses legacy `mode=kanban` flags |
+| `flow/parse-flow-args.sh` | Pure flag parser for `flow` (KEY=VALUE for `eval`; `--serial`/`--loop` imply `--parallel`) |
+| `flow/verdict-check.sh` | The verdict gate: extracts + schema-validates the JSON verdict, prints `BRANCH/SHA/PROVEN/RESIDUAL/BLOCKERS/REVIEW` |
+| `flow/check-worktree-base.sh` | Dispatch-base gate: refuses parallel dispatch while `worktree.baseRef` would fork stale bases |
+| `pickup/detect-worktree.sh` | Linked/external worktree detection incl. owning tool (`MANAGER`: cc · orca · conductor · empty), path evidence beating inherited env |
+| `status/status.sh` | The status report (backend, scaffolding, worktrees, recommendations) |
+| `status/check-cc-changelog.sh` | Drift watch: filters Claude Code releases since `.cc-checked` against `cc-watch-terms.txt` |
+| `discover/discover.sh` | Convention scan → `.claude/rules/project-conventions.md` |
+| `kanban/kanban-render.sh` | The `/board` renderer (bd → read-only `KANBAN.md`) |
+| `kanban/kanban-import.sh` | One-shot legacy `KANBAN.md` → bd migration (idempotent) |
+| `publish/preflight-public.sh` | Offline history preflight: ignored-but-committed files, refs outside push scope, pattern hits over all reachable blobs, commit messages; `--all-refs`, `--patterns <file>`, picks up `.ticket-flow-private-patterns` automatically |
+| `init/install-routing-rule.sh` · `unify-worktree-path.sh` · `set-worktree-baseref.sh` · `install-worktree-include.sh` · `set-worktree-symlinks.sh` | Init helpers: routing rule, `.worktrees` path unification, `worktree.baseRef=head`, `.worktreeinclude` seeding, dependency-dir symlinks |
+| `bd-detox/bd-detox.sh` · `install-prime.sh` | Anti-memory-clause cleanup · `.beads/PRIME.md` override for `bd prime` (also feeds PreCompact) |
+
+### Configuration keys
+
+| Key | Where | Meaning |
+|---|---|---|
+| `git config ticket-flow.visibility` | consumer repo | `public` · `private` · `local` — what the visibility gate judges by; set by `/ticket-flow:publish` |
+| `TICKET_FLOW_VISIBILITY_OK=1` | command prefix | Deliberate one-shot override of the visibility gate |
+| `worktree.baseRef: "head"` | `.claude/settings.json` | Dispatched worktrees fork from local HEAD instead of `origin/<default>` — mandatory for the no-push workflow; set by init, enforced by the dispatch-base gate |
+| `worktree.symlinkDirectories` | `.claude/settings.json` | Dependency dirs (e.g. `node_modules`) shared into worktrees instead of reinstalled; set by init |
+| `.worktreeinclude` | repo root | Gitignored local-config files (`.env`, `*.local`) copied into each worktree; seeded by init from what actually exists |
+| `git config beads.role maintainer` | consumer repo | Silences bd's `beads.role not configured` warning; set by init |
+| `.ticket-flow-private-patterns` | repo root | Project-specific patterns for the publish preflight |
+| `refs/archive/mode-kanban` | this repo, local ref | Last state of the removed dual-mode code — never pushed |
+
+### Project layout (scaffolded by `/ticket-flow:init`)
 
 | Path | Purpose |
 |---|---|
-| `KANBAN.md` (repo root) | On-demand `/board` snapshot — never a workflow input |
 | `.beads/` | beads database — the source of truth |
 | `docs/specs/SPEC-TEMPLATE.md` | Template `/ticket-flow:spec` fills in |
 | `docs/specs/<id>-<slug>.md` | Generated item specs |
 | `docs/superpowers/plans/` | Implementation plans (optional, referenced by `/pickup`) |
-| `.claude/worktrees/` | Worktree directory (auto-created; with `pickup --here` any external worktree works) |
+| `.claude/worktrees/` | Worktree directory (auto-created; with adoption any external worktree works) |
+| `KANBAN.md` | On-demand `/board` snapshot — never a workflow input |
 
-Quick scaffold for a new project — in Claude Code, from the project root:
+Branch naming: `worktree-<id>-<slug>` — whatever `EnterWorktree` produced. An adopted worktree keeps the branch name its tool chose; tf stores the actual name in the ticket's `branch:` marker instead of assuming a convention.
 
-```
-/ticket-flow:init                 # scaffold (also migrates an existing KANBAN.md into bd)
-```
+### Tests
 
-Branch naming: `worktree-<id>-<slug>` — whatever `EnterWorktree` produced. A worktree adopted from another tool (`pickup --here`) keeps the branch name that tool chose; tf stores the actual name in the item's `branch:` marker instead of assuming a convention.
-
-## Update workflow
-
-The plugin is a directory-source plugin — edits to `skills/**/SKILL.md` take effect immediately in open sessions, no reinstall. A new or renamed skill needs a `/plugin` reload or session restart.
-
-Tests (pure-bash, no framework):
+Pure bash, no framework — run from the repo root:
 
 ```bash
-cd ~/_Code/claude/plugins/ticket-flow
+bash hooks/tests/test_visibility-gate.sh
+bash hooks/tests/test_verdict-gate.sh
 bash skills/flow/tests/test_flow-parallel.sh
 bash skills/flow/tests/test_verdict-check.sh
 bash skills/flow/tests/test_check-worktree-base.sh
@@ -116,9 +189,8 @@ bash skills/init/tests/test_set-worktree-symlinks.sh
 bash skills/bd-detox/tests/test_install-prime.sh
 bash skills/bd-detox/tests/test_bd-detox.sh
 bash skills/status/tests/test_status.sh
+bash skills/publish/tests/test_preflight-public.sh
 ```
-
-Helper scripts resolve their own directory via `$(dirname "$0")` — no hardcoded paths.
 
 ## Design boundaries — what ticket-flow deliberately leaves to you
 
