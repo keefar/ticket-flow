@@ -1,36 +1,34 @@
 ---
 name: init
-description: Scaffold a ticket-flow project — asks kanban or beads on first run, then sets up the chosen backend. Idempotent. Invoke as `/ticket-flow:init` (interactive) or `/ticket-flow:init --mode=kanban|beads` (non-interactive). Beads mode also migrates an existing `KANBAN.md` and accepts `--skip-agents` plus other `bd init` pass-throughs.
-argument-hint: [--mode=kanban|beads] [--skip-agents]
+description: Scaffold a ticket-flow project — one-time setup; trigger on "setz ticket-flow auf", "richte das Projekt für ticket-flow ein", "set up ticket-flow here". Runs `bd init` with tf's agents template (keeps Claude Code's own memory system), scaffolds spec dirs and worktree settings, migrates an existing KANBAN.md into beads. Idempotent. Invoke as `/ticket-flow:init` (accepts `--skip-agents` plus other `bd init` pass-throughs).
+argument-hint: [--skip-agents]
 ---
 
 # /ticket-flow:init — Scaffold ticket-flow project files
 
 **Args**:
 
-- (none) — interactive: ask the user `kanban or beads`, then scaffold the chosen mode.
-- `--mode=kanban` / `--mode=beads` — non-interactive mode selection. `--beads` is an alias for `--mode=beads`.
-- **Beads-only pass-throughs** (forwarded to `bd init`): `--skip-agents`, `--stealth`, `--non-interactive`, `--prefix`, `--role`, etc.
+- (none) — scaffold the project (beads is the only backend). `--mode=beads` / `--beads` are accepted as no-op legacy spellings; `--mode=kanban` is refused with a pointer to the removed mode.
+- **Pass-throughs** (forwarded to `bd init`): `--skip-agents`, `--stealth`, `--non-interactive`, `--prefix`, `--role`, etc.
 
 ## What it does
 
-Sets up a project for ticket-flow. The single entry point for both backends — there is no separate `bd-init` skill. The chosen mode is recorded once in a `.ticket-flow` flag file at the repo root, and every workflow skill reads that flag.
+Sets up a project for ticket-flow on beads — the only backend since the
+mode=kanban removal (the dual-mode code is preserved at
+`refs/archive/mode-kanban`). No `.ticket-flow` flag is written anymore; a
+leftover `mode=kanban` flag marks an unmigrated project and this skill is the
+migration path.
 
-**Shared scaffolding (both modes):**
+**Scaffolding:**
 
 - `docs/specs/SPEC-TEMPLATE.md` — template that `/ticket-flow:spec` copies from
 - `docs/superpowers/plans/.gitkeep` — directory for implementation plans (used by `superpowers:writing-plans`)
 - `.claude/worktrees/` — directory where `/ticket-flow:pickup` creates branch worktrees
 - `.worktreeinclude` — gitignored local config (`.env`, `*.local`, …) that must follow a ticket into its worktree; seeded from what the repo actually has, skipped when there is nothing (via `skills/init/install-worktree-include.sh`)
 - `.claude/settings.json` → `worktree.symlinkDirectories` — dependency directories (`node_modules`, `vendor`, …) linked back to the main checkout instead of reinstalled per worktree; build outputs deliberately excluded (via `skills/init/set-worktree-symlinks.sh`)
-- `.ticket-flow` — mode flag (`mode=kanban` or `mode=beads`)
 - `.claude/rules/ticket-flow-routing.md` — the `Ticket-Flow Routing` rule (via `skills/init/install-routing-rule.sh`) so planning/ideation prompts route through tf instead of `superpowers:brainstorming` or `superpowers:writing-plans`. A rule without a `paths:` frontmatter key loads at launch with the same priority as `.claude/CLAUDE.md` ([memory docs](https://code.claude.com/docs/en/memory.md)) — same effect, without writing into the consumer project's own CLAUDE.md. Idempotent (the file's existence is the guard); a routing block left in CLAUDE.md by an older init is removed.
 
-**Kanban-only scaffolding:**
-
-- `KANBAN.md` — board with Inbox · Backlog · In Progress · Testing · Done columns + Definition of Ready
-
-**Beads-only scaffolding:**
+**Beads scaffolding:**
 
 - `.beads/PRIME.md` — override for `bd prime`'s built-in output (via `skills/bd-detox/install-prime.sh`); without it bd re-injects its anti-MEMORY.md guidance on every SessionStart and PreCompact. Never overwrites an existing file.
 - `.beads/` — bd's Dolt database, created by `bd init --agents-template <tf custom template>`. The custom template drops vanilla `bd init`'s anti-MEMORY.md clause so Claude Code's Auto-Memory keeps working alongside `bd remember`. With `--skip-agents`, no AGENTS.md is written and the `BEADS INTEGRATION` block is skipped from CLAUDE.md too.
@@ -38,46 +36,23 @@ Sets up a project for ticket-flow. The single entry point for both backends — 
 - If `.claude/rules/beads-workflow.md` exists and references the stock `.worktrees/` convention, init patches every standalone occurrence to `.claude/worktrees/` (via `skills/init/unify-worktree-path.sh`). This eliminates the dualism where `bd worktree create` and `/ticket-flow:pickup` would otherwise write to different directories. Idempotent.
 - `git config beads.role maintainer` — set once so `bd` calls stop printing the `warning: beads.role not configured (GH#2950)` noise.
 
-**Idempotent same-mode re-runs**: re-running with the same mode is a no-op — existing scaffold files and the `.ticket-flow` flag are kept. Only missing scaffold targets get added.
+**Idempotent re-runs**: re-running is a no-op — existing scaffold files are kept, only missing scaffold targets get added.
 
-**Kanban → beads migration**: re-running with `--mode=beads` on a project that already has `mode=kanban` is the *one supported way to switch modes*. The flag is overwritten, `KANBAN.md` is imported into bd and archived. There is no reverse migration — `beads → kanban` is refused.
+**KANBAN.md migration**: a project with a legacy `KANBAN.md` (with or without an old `mode=kanban` flag) gets every row imported into bd and the file archived — the one supported way in. There is no reverse migration.
 
 ## Steps
 
-### 0. Resolve mode
-
-Scan `"$@"` for an explicit mode:
-
-- `--mode=kanban` → `MODE=kanban`
-- `--mode=beads` or `--beads` → `MODE=beads`
-- Otherwise → ask the user via `AskUserQuestion`:
-  - Question: *"Welcher Backend für die Tickets?"*
-  - Options:
-    - **`kanban`** — `KANBAN.md` as a single source of truth. Zero extra tooling. Best for lightweight, dependency-free projects.
-    - **`beads`** — bd (Dolt-backed issue tracker) with dependency graph, ready-computation, and cross-session memory. Best for multi-session work and projects with blockers.
-
-Then check for an existing `.ticket-flow` flag at the repo root. The interaction matrix:
-
-| Existing flag | New mode | Behavior |
-|---|---|---|
-| *(none)* | kanban or beads | Fresh init. Write the flag. |
-| `mode=kanban` | `kanban` | Idempotent re-run. Don't overwrite the flag; only add missing scaffolding. |
-| `mode=kanban` | `beads` | **Migration.** Run the beads-path scaffold + import KANBAN.md + overwrite the flag with `mode=beads`. |
-| `mode=beads` | `beads` | Idempotent re-run. Don't overwrite the flag; refuse if `.beads/` is already initialized (no `bd reinit` here). Only top up missing scaffold targets. |
-| `mode=beads` | `kanban` | **Refuse.** Abort with: *"`beads → kanban` is not supported — beads is the richer model. Manual export needed."* |
-
-This matrix decides whether the flag-write in steps 2a/2b *overwrites*, *appends*, or *aborts*. Pseudocode:
+### 0. Reject the removed mode, detect a legacy flag
 
 ```bash
-CURRENT=""
-[[ -f "./.ticket-flow" ]] && CURRENT="$(grep -oE '^mode=(kanban|beads)' ./.ticket-flow | cut -d= -f2)"
-
-if [[ "$CURRENT" == "beads" && "$MODE" == "kanban" ]]; then
-  echo "ERROR: beads → kanban migration not supported. Aborting." >&2
-  exit 1
-fi
-MIGRATING=0
-[[ "$CURRENT" == "kanban" && "$MODE" == "beads" ]] && MIGRATING=1
+for arg in "$@"; do
+  [[ "$arg" == "--mode=kanban" ]] && {
+    echo "ERROR: mode=kanban was removed — tf is beads-only. Run /ticket-flow:init (imports an existing KANBAN.md into bd); the old dual-mode code is at refs/archive/mode-kanban." >&2
+    exit 1; }
+done
+# A leftover flag from the dual-mode era: the migration below handles it;
+# it is deleted in step 2b. `mode=beads` flags are simply removed too — the
+# flag has no reader anymore.
 ```
 
 ### 1. Shared scaffolding
@@ -163,24 +138,7 @@ case "$("$PLUGIN/skills/init/set-worktree-symlinks.sh" "$ROOT")" in
 esac
 ```
 
-`$ROOT` is the git root in beads mode; in kanban mode without git both helpers report `no-git` and do nothing.
-
-### 2a. Kanban path
-
-```bash
-scaffold_file "$TEMPLATES/KANBAN.md" "./KANBAN.md"
-
-# Flag write — only when no flag exists (current mode==kanban already handled by
-# step 0; current mode==beads + new mode==kanban is refused in step 0).
-if [[ -e "./.ticket-flow" ]]; then
-  SKIPPED+=("./.ticket-flow")
-else
-  printf 'mode=kanban\n' > "./.ticket-flow"
-  CREATED+=("./.ticket-flow")
-fi
-```
-
-Skip step 2b. Report and exit.
+`$ROOT` is the git root.
 
 ### 2b. Beads path
 
@@ -230,27 +188,21 @@ git config beads.role maintainer
 
 If either check fails, warn the user — the flag wasn't honored by `bd init`.
 
-**One-time `kanban → beads` migration** (when KANBAN.md exists):
+**One-time `KANBAN.md → beads` migration** (when KANBAN.md exists):
 
 ```bash
 if [[ -f "$ROOT/KANBAN.md" ]]; then
   # a. Import every row into bd. kanban-import.sh is idempotent
   #    (skips kanban-N labels already in bd).
   ( cd "$ROOT" && "$PLUGIN/skills/kanban/kanban-import.sh" )
-  # b. Archive the old board — beads mode never reads KANBAN.md again.
+  # b. Archive the old board — the workflow never reads KANBAN.md again.
   mv "$ROOT/KANBAN.md" "$ROOT/KANBAN.archived.md"
 fi
 
-# c. Write the mode flag. In migration mode (was kanban, now beads) we overwrite;
-#    otherwise (no flag) we create. Same-mode idempotent re-runs leave the flag alone.
-if (( MIGRATING )); then
-  printf 'mode=beads\n' > "$ROOT/.ticket-flow"
-  CREATED+=("./.ticket-flow (migrated from mode=kanban)")
-elif [[ ! -e "$ROOT/.ticket-flow" ]]; then
-  printf 'mode=beads\n' > "$ROOT/.ticket-flow"
-  CREATED+=("./.ticket-flow")
-else
-  SKIPPED+=("./.ticket-flow")
+# c. Remove a legacy mode flag — nothing reads it anymore.
+if [[ -e "$ROOT/.ticket-flow" ]]; then
+  rm "$ROOT/.ticket-flow"
+  CREATED+=("(removed legacy .ticket-flow flag)")
 fi
 ```
 
@@ -286,31 +238,10 @@ esac
 
 ## Report
 
-Kanban mode:
-
-```
-✓ ticket-flow scaffolding in <cwd>:
-  [created] .ticket-flow (mode=kanban)
-  [created] KANBAN.md
-  [created] docs/specs/SPEC-TEMPLATE.md
-  [created] docs/superpowers/plans/
-  [exists, skipped] .claude/worktrees/
-  [created] .claude/rules/ticket-flow-routing.md
-
-Mode: kanban — KANBAN.md is the source of truth.
-To switch to beads mode later: re-run /ticket-flow:init --mode=beads (migrates + flips the flag).
-
-Next steps:
-1. Inspect KANBAN.md → capture first item in Inbox
-2. /ticket-flow:spec <id> for the spec
-3. /ticket-flow:pickup <id> for worktree + branch
-```
-
-Beads mode (fresh):
+Fresh:
 
 ```
 ✓ ticket-flow + beads initialized in <cwd>:
-  [created] .ticket-flow (mode=beads)
   [created] .beads/ (bd init …)
   [set] git config beads.role maintainer
   [created] docs/specs/SPEC-TEMPLATE.md
@@ -327,13 +258,13 @@ Next steps:
 3. /ticket-flow:pickup <id> for worktree + branch
 ```
 
-Beads mode (migration from kanban):
+Migration (legacy KANBAN.md found):
 
 ```
 ✓ ticket-flow migrated to beads in <cwd>:
   Migrated <N> item(s) from KANBAN.md into bd.
   [renamed] KANBAN.md → KANBAN.archived.md
-  [created] .ticket-flow (mode=beads)
+  [removed] legacy .ticket-flow flag
   [created] .beads/
   [created] .claude/rules/ticket-flow-routing.md (moved out of CLAUDE.md)
 
@@ -342,13 +273,11 @@ Use /ticket-flow:board to regenerate a static KANBAN.md snapshot from bd on dema
 
 ## Edge cases
 
-- **Not in a git repo (kanban mode)**: fine — kanban scaffolding doesn't require git. The two worktree helpers report `no-git` and write nothing; there are no worktrees without git either.
 - **Nothing gitignored worth copying**: `install-worktree-include.sh` writes no `.worktreeinclude` at all rather than an empty stub, and `set-worktree-symlinks.sh` leaves `worktree.symlinkDirectories` unset. Re-run init after adding a `.env` and it is picked up then.
 - **Hand-maintained `.worktreeinclude` / `symlinkDirectories`**: only missing entries are appended; existing lines and manual entries are never reordered or removed.
-- **Not in a git repo (beads mode)**: abort with hint — `bd init` requires a git repo. Run `git init` first.
+- **Not in a git repo**: abort with hint — `bd init` requires a git repo. Run `git init` first.
 - **Existing `.beads/` (beads mode)**: abort with hint — `bd reinit` or remove first; don't silently re-init.
-- **Existing `.ticket-flow` flag**: see the matrix in step 0. Same-mode re-run is a no-op for the flag itself (only missing scaffold targets get added). `mode=kanban` + `--mode=beads` triggers the migration (overwrite the flag, import KANBAN.md). `mode=beads` + `--mode=kanban` is refused — beads is the richer model.
-- **`KANBAN.md` exists but project is being initialized in kanban mode**: `[exists, skipped]` — the existing board is preserved.
+- **Existing `.ticket-flow` flag** (legacy dual-mode artifact): removed in step 2b — nothing reads it anymore. A `mode=kanban` flag together with a `KANBAN.md` marks an unmigrated project; the migration in step 2b handles it.
 - **Cwd is not project root**: init runs in cwd unconditionally. Caller is responsible for `cd` into the right directory first.
 - **Plugin root not resolvable**: `${CLAUDE_PLUGIN_ROOT}` is set by Claude Code when the skill is loaded. The `${VAR:?}` guard fails fast with an explanatory message if it isn't set.
 - **Custom template missing (beads mode, no `--skip-agents`)**: warn and fall back to vanilla `bd init`. User can run `/ticket-flow:bd-detox` afterward to clean up the anti-MEMORY clause.
@@ -361,5 +290,4 @@ Use /ticket-flow:board to regenerate a static KANBAN.md snapshot from bd on dema
 - Add a git remote (project may or may not be on GitHub — use `/ticket-flow:publish` for that)
 - Configure plugin settings (those live in `.claude-plugin/plugin.json`, not in the user project)
 - Create a sample item
-- Touch existing files in kanban mode (idempotent by design)
-- Switch an already-initialized project to a different mode — re-running on a project with `.ticket-flow` is a no-op except for missing scaffold targets
+- Provide a KANBAN.md-backed mode — mode=kanban was removed (refs/archive/mode-kanban); the only KANBAN.md tf still writes is the on-demand `/ticket-flow:board` snapshot

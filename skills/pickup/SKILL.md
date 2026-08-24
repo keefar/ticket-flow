@@ -1,7 +1,7 @@
 ---
 name: pickup
 user-invocable: false
-description: Claim a KANBAN Backlog item for work — validate DoR, create isolated worktree, scaffold plan, set branch-lock, move item to In Progress. Invoke as `/ticket-flow:pickup <kanban-id>`, `/ticket-flow:pickup <id> <branch-suffix>`, or `/ticket-flow:pickup <id> --here` to adopt the worktree/branch you are already in (orca, Conductor, worktrunk, bead-workflow-skills cards) instead of creating one.
+description: Internal phase 1 of ticket-flow, normally invoked by ticket-flow:flow — validate Definition of Ready, create (or adopt) the ticket's isolated worktree, set the branch lock, claim the item atomically → In Progress. Invoke directly only for recovery, or when the user explicitly wants just the claim+worktree step. Args: `<ticket-id> [branch-suffix] [--here]` — `--here` adopts the worktree the session is already in (orca, Conductor, worktrunk).
 argument-hint: <ticket-id> [branch-suffix] [--here]
 ---
 
@@ -18,7 +18,7 @@ Examples:
 
 1. Validates that the item is in Backlog and DoR is met
 2. Creates a worktree (EnterWorktree, fallback `superpowers:using-git-worktrees`) — or, with `--here`, **adopts** the worktree you are already in (external tool owns it; `/finish` will leave it in place)
-3. Sets a `branch:` lock (bd notes in Mode A, the KANBAN.md note in Mode B)
+3. Sets a `branch:` lock in the bd notes
 4. Moves item Backlog → In Progress
 5. Looks for or scaffolds a plan doc under `docs/superpowers/plans/`
 
@@ -41,14 +41,11 @@ if [[ "$LINKED" == "1" ]]; then
 fi
 ```
 
-(Mode B: the same lock check against `branch: <branch>` in KANBAN.md's In Progress section.) Detection is pure git — linked worktree = `git-dir ≠ git-common-dir`; `TF_OWNED` = the worktree lives under `<main>/.claude/worktrees/`. `MANAGER` names the owning tool when it announces itself (`orca`, `conductor`, `cc` for a Claude Code worktree, empty for a plain `git worktree add`); use it in messages instead of enumerating the field. An explicit `--here` on the main checkout still errors (see step 3+4 guards).
+Detection is pure git — linked worktree = `git-dir ≠ git-common-dir`; `TF_OWNED` = the worktree lives under `<main>/.claude/worktrees/`. `MANAGER` names the owning tool when it announces itself (`orca`, `conductor`, `cc` for a Claude Code worktree, empty for a plain `git worktree add`); use it in messages instead of enumerating the field. An explicit `--here` on the main checkout still errors (see step 3+4 guards).
 
-### 1. Read the item — mode-aware
+### 1. Read the item
 
-The path is decided by the `.ticket-flow` mode flag (source
-`skills/kanban/bd-helper.sh`, branch on `bd_mode`).
-
-**Mode A** (`mode=beads`) — resolve the bd issue, **do not read `KANBAN.md`**:
+Resolve the bd issue, **do not read `KANBAN.md`**:
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/skills/kanban/bd-helper.sh"
@@ -59,17 +56,6 @@ BD_ID="$(bd_id_for "$id")"
 - Label `inbox`: error — "Item is in Inbox, not ready. Meet DoR (write spec, resolve decision) and move to Backlog."
 - Status `in_progress`: error — "Item is already In Progress. Check the `branch:` marker in the bd notes."
 - Label `testing` or status `closed`: error — "Item is already completed."
-
-**Mode B** (`mode=kanban`) — read from KANBAN.md:
-
-```bash
-grep -nE "^\| ${id} \|" KANBAN.md
-```
-
-- Not found: error — "Item #${id} not in Kanban"
-- In Inbox: error — "Item is in Inbox, not ready. Meet DoR (write spec, resolve decision) and move to Backlog."
-- In In Progress: error — "Item is already In Progress. Check the `branch:` marker."
-- In Testing/Done: error — "Item is already completed."
 
 ### 2. Validate DoR (for Backlog items)
 
@@ -102,7 +88,7 @@ Parse the spec's YAML frontmatter — path canonically from the note's `[Spec]` 
   When sub-items are picked one at a time, `/finish` writes an auto-chain pointer for the next sub-item.
 - **`testable-surface:` (Cherry #1)** — comma-separated paths or `none`. *Don't act on it here* — only `/finish` enforces. But log it in step 7's report so the implementer remembers.
 
-Missing spec or frontmatter (Mode B / spec-less items): skip this step silently.
+Missing spec or frontmatter (spec-less items): skip this step silently.
 
 ### 3+4 with `--here` — adopt the current worktree (skip the two steps below)
 
@@ -138,14 +124,10 @@ Guards: must be inside a git worktree, on a named branch, and not the main check
 
 **Base ref note**: EnterWorktree defaults to branching from `origin/<default-branch>` — when working on an active feature branch (e.g. `tauri-prototype`), set `worktree.baseRef = "head"` in settings.json or everything since the last main sync is lost.
 
-### 5. Move the item to In Progress + set the branch lock (mode-aware)
+### 5. Move the item to In Progress + set the branch lock
 
-Source `skills/kanban/bd-helper.sh` and branch on `bd_mode` (the `.ticket-flow`
-mode flag):
-
-**Mode A** (`mode=beads`) — write to bd only. **Do not touch `KANBAN.md`** —
-beads mode keeps no board in the workflow; a snapshot is available on demand
-via `/ticket-flow:board`:
+Write to bd only. **Do not touch `KANBAN.md`** — the workflow keeps no board;
+a snapshot is available on demand via `/ticket-flow:board`:
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/skills/kanban/bd-helper.sh"
@@ -165,12 +147,6 @@ fi
 ```
 
 The branch lock lives in the bd notes field; bd is the source of truth, so no KANBAN.md edit and no render.
-
-**Mode B** (`mode=kanban`):
-
-- **Note**: insert `branch: <branch>` as a pipe sub-field (before any other markers); with `--here` also `worktree: external <path>`
-- **Section**: remove the item from the Backlog table, insert into the In Progress table (top, or by date)
-- Keep the pipe format. Order: `[Spec] · [Plan] · branch: · blocks: · blocked by:`
 
 ### 6. Plan doc
 

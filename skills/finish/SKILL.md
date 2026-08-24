@@ -1,14 +1,13 @@
 ---
 name: finish
 user-invocable: false
-description: Phase 3 of Ticket-Flow — review, optional deploy, merge branch back to main, move Kanban item to Testing, clean up worktree. Invoke as `/ticket-flow:finish` from inside the worktree.
+description: Internal phase 3 of ticket-flow, normally invoked by ticket-flow:flow — verify (tests, review, proven vs. residual ACs), optional deploy, merge to main behind the merge guard, ticket → Testing or Done, worktree cleanup. Invoke directly only to finish an already-implemented ticket whose flow run ended early.
 ---
 
 # /ticket-flow:finish — Phase 3 of Ticket-Flow
 
 **Args**: none — operates in the current worktree, derives the item via the
-`branch:` marker — in the bd notes field (Mode A) or the main repo's KANBAN.md
-(Mode B).
+`branch:` marker in the bd notes field.
 
 ## Prerequisites
 
@@ -18,13 +17,10 @@ description: Phase 3 of Ticket-Flow — review, optional deploy, merge branch ba
 
 ## Steps
 
-### 1. Identify the item — mode-aware
+### 1. Identify the item
 
-Read the current branch (`git branch --show-current`), then resolve the item
-by the `.ticket-flow` mode flag (source `skills/kanban/bd-helper.sh`):
-
-- **Mode A** (`mode=beads`) — find the bd issue whose notes field carries
-  `branch: <branch>`. **Do not read `KANBAN.md`.**
+Read the current branch (`git branch --show-current`), then find the bd issue
+whose notes field carries `branch: <branch>`. **Do not read `KANBAN.md`.**
   ```bash
   source "${CLAUDE_PLUGIN_ROOT}/skills/kanban/bd-helper.sh"
   BRANCH="$(git branch --show-current)"
@@ -32,9 +28,8 @@ by the `.ticket-flow` mode flag (source `skills/kanban/bd-helper.sh`):
     '.[] | select((.notes // "") | test("(^|\\n)branch: " + $b + "$")) | .id' | head -1)"
   ID="$(bd_kanban_for "$BD_ID")"
   ```
-- **Mode B** (`mode=kanban`) — search KANBAN.md (main repo) for `branch: <branch>` in the In Progress section.
 
-Extract ID, title, tag, spec/plan links from the resolved source. Also read a `worktree: external <path>` line (Mode A: bd notes; Mode B: KANBAN note sub-field) — it means the worktree was **adopted** via `/ticket-flow:pickup --here` (orca, Conductor, worktrunk, bead-workflow-skills): set `ADOPTED=1`, `WORKTREE=<path>`; 5a and Step 7 branch on it.
+Extract ID, title, tag, spec/plan links from the resolved issue. Also read a `worktree: external <path>` line in the bd notes — it means the worktree was **adopted** via `/ticket-flow:pickup --here` (orca, Conductor, worktrunk, bead-workflow-skills): set `ADOPTED=1`, `WORKTREE=<path>`; 5a and Step 7 branch on it.
 
 **Commit-cwd caveat** (full form in `/ticket-flow:implement` Step 1) — the rule differs by session type:
 
@@ -157,17 +152,11 @@ The `git worktree remove` here follows Step 7's verify-then-defer rule (`git wor
 - Numbered steps: the **residual** checks only — exclude anything step 2 marked as already proven. Each step is self-explanatory without prior context: *what to do → what to look for → what would count as a failure*. No "see above", no chat-history references, no bare issue IDs as the only pointer.
 - Storage — **in beads mode the checklist belongs in the issue DESCRIPTION**, as a section headed with the word "verify" (e.g. `## ✅ To verify` — German projects: `## ✅ Zu verifizieren`), placed at the very top, followed by the numbered list. External dashboards/mirrors that render a "what to verify" column read exactly that section (first ~700 chars), so it must be self-contained; a `[Verify]` notes line is a legacy fallback only. Write it with `bd update <id> --description=…` passing the FULL new text (description updates replace — read the current one first so nothing is lost).
   - **Item has a spec doc** → the long-form procedure may additionally live as a `## Verification` section in the spec (after Acceptance Criteria), with the description section carrying the short numbered steps plus a `[Spec]` link. The spec path comes **canonically from the `[Spec]` link** in the item's note (Step 1) — projects lay specs out differently (e.g. `docs/superpowers/specs/…`); the convention `docs/specs/<id>-<slug>.md` is only the fallback when no link exists.
-  - **Mode B / KANBAN.md projects** (no bd description field) → keep the (tiny) checklist inline in the KANBAN Testing-row note, same self-explanatory numbering.
 - **Bundle across items**: when several Testing items are verified by the same real-world run, say so in the chat summary ("run 1 covers X, Y, Z") instead of listing each item separately — the user should not repeat one measurement three times.
 
-**State update (mode-aware):**
-
-Source `skills/kanban/bd-helper.sh` and branch on `bd_mode` (the `.ticket-flow`
-mode flag):
-
-**Mode A** (`mode=beads`) — write to bd only. **Do not touch `KANBAN.md`** —
-beads mode keeps no board in the workflow; a snapshot is available on demand
-via `/ticket-flow:board`:
+**State update** — write to bd only. **Do not touch `KANBAN.md`** — the
+workflow keeps no board; a snapshot is available on demand via
+`/ticket-flow:board`:
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/skills/kanban/bd-helper.sh"
@@ -187,13 +176,7 @@ if [[ -n "$BD_ID" ]]; then
 fi
 ```
 
-When a residual exists, the **numbered checklist lives in the issue description** (see "Verification checklist" above — that is what dashboards render); the `[Verify]` notes line stays only as a short pointer/legacy marker. The notes-replace pattern preserves anything that's *not* prefixed `branch:` or `[Verify]`. When fully proven, the bd issue is closed. bd is the source of truth — there is no KANBAN.md to refresh and no render; `bd compact` (or `bd list --status=closed`) handles long-term storage. The `KANBAN-done.md` archive remains a Mode-B-only concept. A static board snapshot, if wanted, is `/ticket-flow:board`.
-
-**Mode B** (`mode=kanban`):
-
-- Remove the item from **In Progress**.
-- **Residual exists** → insert into **Testing** (top); **no residual** → append to `KANBAN-done.md` instead (skip Testing).
-- Update the note: remove the `branch:` marker; remove `spec: drafting` if present; add the `[Verify]` pointer (or the inline checklist) per above.
+When a residual exists, the **numbered checklist lives in the issue description** (see "Verification checklist" above — that is what dashboards render); the `[Verify]` notes line stays only as a short pointer/legacy marker. The notes-replace pattern preserves anything that's *not* prefixed `branch:` or `[Verify]`. When fully proven, the bd issue is closed. bd is the source of truth — there is no KANBAN.md to refresh and no render; `bd compact` (or `bd list --status=closed`) handles long-term storage. A static board snapshot, if wanted, is `/ticket-flow:board`.
 
 Plus, if a bug log is warranted (multiple hypotheses, algorithmic fix, regression) and not yet present: create `docs/kanban/<id>-title.md` (or the project's equivalent) + link it.
 
@@ -301,7 +284,7 @@ This is escalation, not auto-fix — the user always sees the failure. The point
 - **Root-cause hypothesis** — the best read of what is actually blocking.
 - **Suggested next step** — one concrete, actionable suggestion for the human.
 
-**Mode A** (`mode=beads`) — file a bead (`dangerouslyDisableSandbox: true` for the `bd` call):
+File a bead (`dangerouslyDisableSandbox: true` for the `bd` call; no `.beads/` in the project → `gh issue create` if it tracks blockers on GitHub, otherwise report inline):
 
 ```bash
 bd create --type=bug --priority=1 --title="blocked: <short task title>" \
@@ -325,8 +308,6 @@ bd create --type=bug --priority=1 --title="blocked: <short task title>" \
 bd create --type=bug --priority=1 --title="blocked: <short task title>" \
   --description="$(cat /tmp/claude/escalation.md)"
 ```
-
-**Mode B** (`mode=kanban`) — add the same four-section block as a new bug item in the KANBAN.md Inbox (or `gh issue create` if the project tracks blockers on GitHub).
 
 Then report to the user: the raw error **and** the escalation issue id. A typecheck/test failure that is a normal code bug is **not** a hard blocker — that goes back to `/ticket-flow:implement` as before.
 

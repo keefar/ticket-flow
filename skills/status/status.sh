@@ -16,35 +16,25 @@ BRANCH="$(git branch --show-current 2>/dev/null)"
 echo "ticket-flow @ $ROOT  (branch: $BRANCH)"
 echo
 
-# --- Mode detection (the .ticket-flow flag; .beads/-presence is the legacy fallback) ---
-# MODE_KEY is the machine-readable form every later check branches on; MODE is
-# only the display string.
-if [[ -f .ticket-flow ]] && grep -q '^mode=beads' .ticket-flow 2>/dev/null; then
-  MODE_KEY="beads"
-  MODE="beads — bd is the source of truth"
-elif [[ -f .ticket-flow ]] && grep -q '^mode=kanban' .ticket-flow 2>/dev/null; then
-  MODE_KEY="kanban"
-  MODE="kanban — KANBAN.md is the source of truth"
+# --- Backend detection (beads-only; mode=kanban was removed — refs/archive/mode-kanban) ---
+# MODE_KEY is the machine-readable form later checks branch on; MODE is only
+# the display string. A leftover mode=kanban flag marks an unmigrated project.
+if [[ -f .ticket-flow ]] && grep -q '^mode=kanban' .ticket-flow 2>/dev/null; then
+  MODE_KEY="unmigrated"
+  MODE="UNMIGRATED — legacy mode=kanban flag; mode=kanban was removed. Run /ticket-flow:init (imports KANBAN.md into bd)"
 elif [[ -d .beads ]]; then
   MODE_KEY="beads"
-  MODE="beads (legacy — no .ticket-flow flag; run /ticket-flow:init --mode=beads to set it)"
-elif [[ -f KANBAN.md ]]; then
-  MODE_KEY="kanban"
-  MODE="kanban (legacy — no .ticket-flow flag; run /ticket-flow:init to set it)"
+  MODE="beads — bd is the source of truth"
 else
   MODE_KEY="none"
   MODE="none — no scaffolding yet"
 fi
-printf "PROJECT MODE:        %s\n" "$MODE"
+printf "PROJECT BACKEND:     %s\n" "$MODE"
 
 # --- Scaffolding ---
-# What counts as required depends on the mode:
-#   kanban → KANBAN.md is the source of truth, so its absence is a real defect
-#   beads  → bd is the sole source of truth and KANBAN.md is opt-in: it exists
-#            only when someone ran /ticket-flow:board, and it is never a
-#            workflow input (docs/architecture.md). Demanding it here would
-#            report a defect in the one mode where the architecture rules it out.
-#   none   → nothing is scaffolded yet; init is the recommendation anyway
+# bd is the sole source of truth and KANBAN.md is opt-in: it exists only when
+# someone ran /ticket-flow:board, and it is never a workflow input. none →
+# nothing is scaffolded yet; init is the recommendation anyway.
 # Optional (shown only when present): CLAUDE.md, AGENTS.md, the board snapshot.
 declare -a SCAFF
 declare -a MISSING
@@ -58,18 +48,12 @@ else
 fi
 [[ -f docs/specs/SPEC-TEMPLATE.md ]]     && SCAFF+=("SPEC-TEMPLATE.md")
 [[ ! -f docs/specs/SPEC-TEMPLATE.md ]]   && MISSING+=("SPEC-TEMPLATE.md")
-case "$MODE_KEY" in
-  beads)
-    [[ -d .beads ]]     && SCAFF+=(".beads/")   || MISSING+=(".beads/")
-    [[ -f KANBAN.md ]]  && SCAFF+=("KANBAN.md (board snapshot, optional)")
-    ;;
-  kanban)
-    [[ -f KANBAN.md ]]  && SCAFF+=("KANBAN.md") || MISSING+=("KANBAN.md")
-    ;;
-  *)
-    [[ -f KANBAN.md ]]  && SCAFF+=("KANBAN.md") || MISSING+=("KANBAN.md")
-    ;;
-esac
+if [[ "$MODE_KEY" == "beads" ]]; then
+  SCAFF+=(".beads/")
+else
+  MISSING+=(".beads/")
+fi
+[[ -f KANBAN.md ]] && SCAFF+=("KANBAN.md (board snapshot, optional)")
 [[ -f CLAUDE.md ]]                       && SCAFF+=("CLAUDE.md")
 [[ -f AGENTS.md ]]                       && SCAFF+=("AGENTS.md")
 SCAFF_JOINED=""

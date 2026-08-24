@@ -1,12 +1,12 @@
 ---
 name: implement
 user-invocable: false
-description: Phase 2 of Ticket-Flow — execute the plan for the current In-Progress Kanban item. Runs inside the worktree. Delegates to `superpowers:executing-plans`, or to subagent dispatch when the session is allowed to spawn one, depending on plan complexity. Invoke as `/ticket-flow:implement`.
+description: Internal phase 2 of ticket-flow, normally invoked by ticket-flow:flow — execute the plan for the claimed ticket inside its worktree: incremental commits, typecheck/test after each major step. Invoke directly only to continue implementing a ticket that is already picked up.
 ---
 
 # /ticket-flow:implement — Phase 2 of Ticket-Flow
 
-**Args**: none — operates in the current worktree, derives the item via the `branch:` marker — in the bd notes field (Mode A) or the main repo's KANBAN.md (Mode B).
+**Args**: none — operates in the current worktree, derives the item via the `branch:` marker in the bd notes field.
 
 ## Prerequisites
 
@@ -25,7 +25,7 @@ git branch --show-current
 
 Resolve the item by the `.ticket-flow` mode flag (source `skills/kanban/bd-helper.sh`):
 
-- **Mode A** (`mode=beads`) — find the bd issue whose notes field carries `branch: <branch>`. **Do not read `KANBAN.md`.**
+- Find the bd issue whose notes field carries `branch: <branch>`. **Do not read `KANBAN.md`.**
   ```bash
   source "${CLAUDE_PLUGIN_ROOT}/skills/kanban/bd-helper.sh"
   BRANCH="$(git branch --show-current)"
@@ -33,7 +33,6 @@ Resolve the item by the `.ticket-flow` mode flag (source `skills/kanban/bd-helpe
     '.[] | select((.notes // "") | test("(^|\\n)branch: " + $b + "$")) | .id' | head -1)"
   ID="$(bd_kanban_for "$BD_ID")"
   ```
-- **Mode B** (`mode=kanban`) — search KANBAN.md (in the **main repo**, not the worktree!) for `branch: <branch>` in the In Progress section.
 
 **IMPORTANT — where a git commit may run depends on the session type.** Two different regimes, do not mix them up:
 
@@ -132,7 +131,7 @@ This is escalation, not auto-fix — the user always sees the failure. The point
 - **Root-cause hypothesis** — the best read of what is actually blocking.
 - **Suggested next step** — one concrete, actionable suggestion for the human.
 
-**Mode A** (`.beads/` present) — file a bead (`dangerouslyDisableSandbox: true` for the `bd` call):
+File a bead (`dangerouslyDisableSandbox: true` for the `bd` call; no `.beads/` in the project → `gh issue create` if it tracks blockers on GitHub, otherwise report inline):
 
 ```bash
 bd create --type=bug --priority=1 --title="blocked: <short task title>" \
@@ -156,8 +155,6 @@ bd create --type=bug --priority=1 --title="blocked: <short task title>" \
 bd create --type=bug --priority=1 --title="blocked: <short task title>" \
   --description="$(cat /tmp/claude/escalation.md)"
 ```
-
-**Mode B** (no `.beads/`) — add the same four-section block as a new bug item in the KANBAN.md Inbox intake zone (or `gh issue create` if the project tracks blockers on GitHub).
 
 Then report to the user: the raw error **and** the escalation issue id.
 

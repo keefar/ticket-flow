@@ -1,6 +1,6 @@
 ---
 name: spec
-description: Create a Spec doc for a KANBAN item from SPEC-TEMPLATE.md. Interactive mode sets the Kanban note to `spec: drafting`; `--auto` drafts the whole spec non-interactively and sets `spec: review`. Invoke as `/ticket-flow:spec <kanban-id>`, `/ticket-flow:spec <kanban-id> <author>` (default author = `git config user.name`, fallback `$USER`), or `/ticket-flow:spec <kanban-id> --auto`.
+description: Draft a spec document for a tracked ticket before implementation — the entry point when the user describes a need in prose: "ich brauche …", "mach die spec", "schreib eine Spec für X", "wir sollten X bauen", "draft a spec". Captures the WHAT plus acceptance criteria and proposes open decisions with recommendations. Interactive by default (sets `spec: drafting`); `--auto` drafts the whole spec non-interactively (sets `spec: review`). Invoke as `/ticket-flow:spec <ticket-id> [author] [--auto]`.
 argument-hint: <ticket-id> [author] [--auto]
 ---
 
@@ -17,37 +17,21 @@ Examples:
 ## Prerequisites
 
 - The item must already exist as a tracked ticket:
-  - **Mode A** (`mode=beads`): a bd issue with a `kanban-<id>` label.
-  - **Mode B** (`mode=kanban`): a row in `KANBAN.md` (project root) in
-    Inbox / Backlog / In Progress / Testing.
-- Items in ROADMAP.md are out of scope — triage them into bd / KANBAN.md Inbox first.
+  a bd issue (raw bd-id, or a `kanban-<id>` label for numeric ids).
+- Items in ROADMAP.md are out of scope — triage them into bd first.
 - Template: `docs/specs/SPEC-TEMPLATE.md` (in the project).
 
 ## Steps
 
-1. **Find the item** — the path is decided by the `.ticket-flow` mode flag
-   (source `skills/kanban/bd-helper.sh`, branch on `bd_mode`):
-
-   **Mode A** (`mode=beads`) — resolve the bd issue, **do not read `KANBAN.md`**:
+1. **Find the item** — resolve the bd issue, **do not read `KANBAN.md`**:
    ```bash
    source "${CLAUDE_PLUGIN_ROOT}/skills/kanban/bd-helper.sh"
-   BD_ID="$(bd_id_for "$id")"   # scans kanban-<id> labels
+   BD_ID="$(bd_id_for "$id")"   # raw bd-ids pass through; numeric ids scan kanban-<id> labels
    ```
    Empty `BD_ID` → error ("item #<id> not tracked in bd").
-
-   **Mode B** (`mode=kanban`) — `grep -nE "^\| ${id} \|" KANBAN.md` → expect exactly one match. Zero → error ("item not in Kanban"). More than one → error (duplicate ID).
-2. **Extract fields**:
-
-   **Mode A** — from `bd show "$BD_ID" --json`: `tag` from `issue_type`
+2. **Extract fields** — from `bd show "$BD_ID" --json`: `tag` from `issue_type`
    (`bug`/`feature`/`task→change`), `title`, `note` from the bd `notes` field,
    `cluster` from a `cluster-<marker>` label if present (else `-`).
-
-   **Mode B** — from the KANBAN.md table row:
-   - `tag`: second pipe field (strip backticks, e.g. `` `feature` `` → `feature`)
-   - `title_raw`: third pipe field (full, including cluster marker)
-   - `cluster`: isolate the leading `` `[xxx]` `` marker from `title_raw` (if present). Otherwise `-`.
-   - `title`: `title_raw` without the cluster-marker prefix and without leading whitespace
-   - `note`: fourth pipe field (keep all existing pipe sub-fields!)
 
    No date is extracted in either mode — neither bd's display nor KANBAN.md's four columns (`# · Tag · Title · Note`) store a creation date. The frontmatter `created:` is set in step 6.
 3. **Build the slug**:
@@ -74,13 +58,9 @@ Examples:
 7. **Title heading** in the template: replace `# <Title>` with `# ${title}` (no cluster marker).
 8. **Keep the rest** verbatim — the spec author fills it in. The template's body sections are: Context, Acceptance Criteria, Out of Scope, **Reference Fork** (Cherry #7), **Testable Surfaces** (Cherry #1), **Sub-Items** (Cherry #6), References, Notes. *(In `--auto` mode the agent fills the body instead — see **Autonomous mode (`--auto`)** below.)*
 9. **`Write`** the filled spec to the target path.
-10. **Surface the spec link + status marker** — the path is decided by the
-    `.ticket-flow` mode flag (`bd_mode` → `A` for `mode=beads`, `B` for
-    `mode=kanban`):
-
-    **Mode A** (`mode=beads`) — write to bd only. **Do not touch `KANBAN.md`** —
-    beads mode keeps no board in the workflow (a snapshot is available on
-    demand via `/ticket-flow:board`):
+10. **Surface the spec link + status marker** — write to bd only. **Do not
+    touch `KANBAN.md`** (a board snapshot is available on demand via
+    `/ticket-flow:board`):
 
     ```bash
     source "${CLAUDE_PLUGIN_ROOT}/skills/kanban/bd-helper.sh"
@@ -98,21 +78,11 @@ Examples:
     ```
 
     The merge-safe `bd_update_notes_replace_prefix` wrappers preserve any other notes (e.g. `branch:` from a prior /pickup, `[Verify]` from a prior /finish).
-
-    **Mode B** (`mode=kanban`) — hand-edit KANBAN.md:
-
-    - Rebuild the note field for the item row:
-      - Keep existing pipe sub-fields (e.g. `[Plan](...)` links, `branch:` lock)
-      - Remove the `spec: pending` marker if present
-      - Insert `[Spec](docs/specs/<id>-<slug>.md)` at the start of the pipe list (before other links)
-      - Append the `spec: drafting (<author>)` marker at the end of the pipe list — **in `--auto` mode append `spec: review` instead** (see **Autonomous mode (`--auto`)** below)
-    - Order convention: `[Spec] · [Plan] · branch: · blocks: · blocked by: · spec: drafting`
-    - Empty note `—` → new note containing only `[Spec](...) · spec: drafting (<author>)` (or `[Spec](...) · spec: review` in `--auto` mode)
 11. **Report**:
     ```
-    📋 Kanban: #<id> spec created
+    📋 #<id> spec created
     → docs/specs/<id>-<slug>.md (status: draft)
-    → KANBAN note: spec: drafting (<author>)
+    → note: spec: drafting (<author>)
 
     Next steps: fill in Acceptance Criteria + Context in the spec, then set `status: approved`.
     ```

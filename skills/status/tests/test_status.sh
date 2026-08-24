@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Unit tests for skills/status/status.sh
 #
-# Focus: the scaffolding verdict is mode-dependent. In mode=beads, KANBAN.md is
-# opt-in (rendered on demand by /ticket-flow:board, never a workflow input), so
-# its absence must not be reported as missing scaffolding — the earlier version
-# flagged a defect in exactly the mode where the architecture rules it out.
+# Focus: beads-only semantics. KANBAN.md is opt-in (rendered on demand by
+# /ticket-flow:board, never a workflow input), so its absence must never be
+# reported as missing scaffolding; a leftover mode=kanban flag is reported as
+# an unmigrated project, not silently treated as a valid mode.
 #
 # `bd` is stubbed out so the tests never touch a real Dolt database.
 set -u
@@ -56,19 +56,13 @@ grep -q 'KANBAN.md (board snapshot, optional)' <<<"$out" \
   && ok "a rendered board is listed as an optional snapshot" \
   || nope "a rendered board is listed as an optional snapshot" "$out"
 
-# 3. mode=kanban without KANBAN.md — here it IS a defect.
-d=$(make_project kanban)
-out=$( cd "$d" && "$SCRIPT_UNDER_TEST" 2>&1 )
-grep -q 'missing:.*KANBAN.md' <<<"$out" && ok "kanban mode reports a missing KANBAN.md" \
-  || nope "kanban mode reports a missing KANBAN.md" "$out"
-grep -q 'ticket-flow:init.*scaffolding missing' <<<"$out" \
-  && ok "kanban mode recommends init" || nope "kanban mode recommends init" "$out"
-
-# 4. mode=kanban with the board — clean.
+# 3. A leftover mode=kanban flag marks an UNMIGRATED project.
 d=$(make_project kanban kanban)
 out=$( cd "$d" && "$SCRIPT_UNDER_TEST" 2>&1 )
-grep -q 'missing:' <<<"$out" && nope "kanban mode with a board is clean" "$out" \
-  || ok "kanban mode with a board is clean"
+grep -q 'UNMIGRATED' <<<"$out" && ok "legacy mode=kanban flag is reported as unmigrated" \
+  || nope "legacy mode=kanban flag is reported as unmigrated" "$out"
+grep -q 'ticket-flow:init' <<<"$out" \
+  && ok "unmigrated project points at init" || nope "unmigrated project points at init" "$out"
 
 # 5. Legacy fallback: no .ticket-flow flag, but .beads/ present → beads rules apply.
 d=$(mktemp -d -p /tmp/claude); git -C "$d" init -q
@@ -78,13 +72,13 @@ grep -q 'missing:.*KANBAN.md' <<<"$out" \
   && nope "legacy beads (no flag) also treats the board as optional" "$out" \
   || ok "legacy beads (no flag) also treats the board as optional"
 
-# 6. Unscaffolded project → the board counts again, and init is recommended.
+# 6. Unscaffolded project → .beads/ is the gap, and init is recommended.
 d=$(mktemp -d -p /tmp/claude); git -C "$d" init -q
 out=$( cd "$d" && "$SCRIPT_UNDER_TEST" 2>&1 )
-grep -q 'missing:.*KANBAN.md' <<<"$out" && ok "unscaffolded project still misses KANBAN.md" \
-  || nope "unscaffolded project still misses KANBAN.md" "$out"
-grep -q 'SPEC-TEMPLATE.md' <<<"$out" && ok "missing list names every gap, not just the board" \
-  || nope "missing list names every gap, not just the board" "$out"
+grep -q 'missing:.*\.beads/' <<<"$out" && ok "unscaffolded project misses .beads/" \
+  || nope "unscaffolded project misses .beads/" "$out"
+grep -q 'SPEC-TEMPLATE.md' <<<"$out" && ok "missing list names every gap, not just the tracker" \
+  || nope "missing list names every gap, not just the tracker" "$out"
 
 # 7. Missing scaffolding OTHER than the board is still reported in beads mode.
 d=$(mktemp -d -p /tmp/claude); git -C "$d" init -q
@@ -124,8 +118,8 @@ d=$(make_project kanban kanban)
 out=$( cd "$d" && "$SCRIPT_UNDER_TEST" 2>&1 )
 grep -qF 'bd doctor' <<<"$out" && nope "no bd doctor without .beads/" "$out" \
   || ok "no bd doctor without .beads/"
-grep -qF '/doctor' <<<"$out" && ok "/doctor is offered in kanban mode too" \
-  || nope "/doctor is offered in kanban mode too" "$out"
+grep -qF '/doctor' <<<"$out" && ok "/doctor is offered without .beads/ too" \
+  || nope "/doctor is offered without .beads/ too" "$out"
 
 # 11. Inside a linked worktree .git is a file, not a directory — git must still
 #     count as present, or status misfires in the very case it is meant for.
