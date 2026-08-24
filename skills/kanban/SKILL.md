@@ -1,5 +1,6 @@
 ---
 name: kanban
+user-invocable: false
 description: Use when a prompt contains a new bug/feature/change not yet tracked, or when an item's status changes (Inbox · Backlog · In Progress · Testing · Done).
 ---
 

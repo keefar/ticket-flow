@@ -2,16 +2,15 @@
 
 A **kanban- or beads-backed** ticket workflow for Claude Code — a spec → pickup → implement → finish pipeline plus an orchestrator, every ticket worked in its own isolated git worktree. `/ticket-flow:init` asks which backend at setup; see **Operating modes** below.
 
-- `/ticket-flow:init` — scaffold a project for ticket-flow (run once)
-- `/ticket-flow:spec <id>` — create a spec doc from template; `--auto` drafts the whole spec non-interactively
-- `/ticket-flow:pickup <id>` — phase 1: validate Definition of Ready, create a worktree, set the branch lock, claim the item (atomic `bd update --claim` in beads mode) → In Progress. Already inside a worktree another tool made (orca card, Conductor, worktrunk, bead-workflow-skills)? pickup detects it and **adopts** it instead of nesting one (`--here` makes that explicit); `finish` then merges from the main repo and leaves the worktree to its owner
-- `/ticket-flow:implement` — phase 2: execute the plan inside the worktree
-- `/ticket-flow:finish` — phase 3: verify (typecheck/tests, testable-surface gate, proven vs. residual), optional deploy, merge to main behind a merge guard (`merge-base --is-ancestor` + clean tree before anything is deleted), item → Testing with a verification checklist — or straight to Done when nothing residual remains
-- `/ticket-flow:flow <id>` — orchestrator: `--local` (default — all phases in this session with checkpoints), `--parallel` (work multiple ready tickets at once via worktree-isolated subagents), or `--serial --loop` (unattended queue runner: one subagent at a time, merge + deploy + cleanup per ticket, re-query the ready queue until it is empty; pair with `--use-recommendations`). Subagent reports end in a JSON verdict that `skills/flow/verdict-check.sh` validates before any merge (no merge on prose)
-- `/ticket-flow:kanban` — board maintenance
-- `/ticket-flow:board` — generate a read-only `KANBAN.md` snapshot from bd state (beads mode)
+The slash menu shows **five commands** — the ones a human actually types:
 
-Setup & maintenance: `/ticket-flow:bd-detox`, `/ticket-flow:discover`, `/ticket-flow:status` (diagnose the project and recommend the next action — also the recovery entry after a lost session), `/ticket-flow:publish`, `/ticket-flow:push`, `/ticket-flow:visibility` (inspect or change whether a repo is local, private or public — runs an offline preflight over the whole history first, because going public exposes history and cannot be undone).
+- `/ticket-flow:flow <id>` — the orchestrator and everyday entry point: `--local` (default — all phases in this session with checkpoints), `--parallel` (work multiple ready tickets at once via worktree-isolated subagents), or `--serial --loop` (unattended queue runner: one subagent at a time, merge + deploy + cleanup per ticket, re-query the ready queue until it is empty; pair with `--use-recommendations`). Subagent reports end in a JSON verdict that `skills/flow/verdict-check.sh` validates before any merge (no merge on prose)
+- `/ticket-flow:spec <id>` — create a spec doc from template; `--auto` drafts the whole spec non-interactively
+- `/ticket-flow:init` — scaffold a project for ticket-flow (run once)
+- `/ticket-flow:status` — diagnose the project and recommend the next action; also the recovery entry after a lost session
+- `/ticket-flow:publish` — everything that makes a repo more public than it is: report the publication state (local, private, public), run the offline preflight over the whole history, perform the guarded transition, or create the GitHub repo in the first place (`<owner>/<name> <visibility>`). Going public exposes history and cannot be undone — that is why this is the one deliberately manual step
+
+The remaining skills are **internal** (`user-invocable: false` — the model invokes them, they stay out of the slash menu): the three phases `pickup` (validate Definition of Ready, create or adopt a worktree, branch lock, atomic claim), `implement` (execute the plan inside the worktree) and `finish` (verify, optional deploy, merge behind a merge guard, item → Testing with a verification checklist or straight to Done); plus `kanban` (board maintenance), `board` (read-only `KANBAN.md` snapshot from bd state), `discover` (project-conventions scan), `bd-detox` (strip the anti-memory clause from vanilla `bd init` projects) and `push` (push `main` from the controller session — `flow`/`finish` deliberately leave commits local; ask for a push in plain words and the model runs it from the right session).
 
 ```
 spec ──► pickup ──► implement ──► finish ──► Testing / Done
