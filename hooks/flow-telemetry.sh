@@ -127,7 +127,23 @@ LOG_DIR=$(dirname "$LOG_FILE" 2>/dev/null || true)
 BRANCH=""; SHA=""; TICKET=""; COMMITS=""; PROVEN=""; RESIDUAL=""
 BLOCKERS=""; REVIEW=""; VERDICT_VALID="false"
 
-CHECK="$(dirname "$0")/../skills/flow/verdict-check.sh"
+# Resolving the checker matters more than it looks: this hook is normally
+# INSTALLED to $HOME/.claude/hooks/, where the relative path into the plugin
+# does not resolve. Falling back to verdict_valid=false there would report
+# every verdict as invalid — and that field is exactly what the evaluator's
+# headline number is built from. So try the override, then the plugin root,
+# then the sibling path; if none exists, say "unknown", never "false".
+if [ -n "${CLAUDE_FLOW_VERDICT_CHECK:-}" ] && [ -x "${CLAUDE_FLOW_VERDICT_CHECK}" ]; then
+  CHECK="$CLAUDE_FLOW_VERDICT_CHECK"
+elif [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -x "${CLAUDE_PLUGIN_ROOT}/skills/flow/verdict-check.sh" ]; then
+  CHECK="${CLAUDE_PLUGIN_ROOT}/skills/flow/verdict-check.sh"
+else
+  CHECK="$(dirname "$0")/../skills/flow/verdict-check.sh"
+fi
+
+if [ ! -x "$CHECK" ]; then
+  VERDICT_VALID="unknown"
+fi
 
 TMP_BASE="/tmp/claude"
 mkdir -p "$TMP_BASE" 2>/dev/null
@@ -179,6 +195,9 @@ def n(name):
     except (ValueError, TypeError):
         return None
 
+_vv = os.environ.get("VERDICT_VALID", "")
+VERDICT_TRISTATE = True if _vv == "true" else False if _vv == "false" else None
+
 row = {
     "ts": datetime.now().astimezone().isoformat(timespec="seconds"),
     "session_id": s("SESSION_ID"),
@@ -186,7 +205,10 @@ row = {
     "agent_type": s("AGENT_TYPE"),
     "cwd": s("CWD"),
     "ticket": s("TICKET"),
-    "verdict_valid": os.environ.get("VERDICT_VALID") == "true",
+    # true / false / null. null means the checker was not reachable, which is
+    # a different fact from "checked and rejected" and must not be conflated:
+    # the headline share in flow-stats.sh is built on this field.
+    "verdict_valid": VERDICT_TRISTATE,
     "proven": n("PROVEN"),
     "residual": n("RESIDUAL"),
     "blockers": n("BLOCKERS"),
