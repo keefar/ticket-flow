@@ -4,7 +4,7 @@
 # Parses argv and prints KEY=VALUE lines for the caller to `eval`. No side
 # effects, no system reads — deterministic and unit-testable.
 #
-# Emitted vars: MODE (local|parallel), ID, SUFFIX, PARALLEL, LOCAL, USE_RECS,
+# Emitted vars: MODE (local|parallel), ID, SUFFIX, PARALLEL, USE_RECS,
 # DECISIONS, SERIAL, LOOP, HERE, PARALLEL_IDS (array — only populated for
 # MODE=parallel; empty there means "the whole ready queue").
 #
@@ -19,7 +19,6 @@ set -u
 
 ID=""
 SUFFIX=""
-LOCAL=1
 PARALLEL=0
 DECISIONS=""
 USE_RECS=0
@@ -31,7 +30,7 @@ prev=""
 
 for arg in "$@"; do
   case "$arg" in
-    --local)               LOCAL=1 ;;
+    --local)               ;;                    # the default; accepted for symmetry, carries no state
     --parallel)            PARALLEL=1 ;;
     --serial)              SERIAL=1; PARALLEL=1 ;;   # implies --parallel
     --loop)                LOOP=1;   PARALLEL=1 ;;   # implies --parallel
@@ -88,7 +87,6 @@ echo "MODE=$MODE"
 echo "ID=$ID"
 echo "SUFFIX=$SUFFIX"
 echo "PARALLEL=$PARALLEL"
-echo "LOCAL=$LOCAL"
 echo "USE_RECS=$USE_RECS"
 echo "DECISIONS=$DECISIONS"
 echo "SERIAL=$SERIAL"

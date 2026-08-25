@@ -7,7 +7,7 @@ argument-hint: <ticket-id> | --parallel [ids…] | --serial --loop
 # /flow — Ticket-Flow orchestrator
 
 **Args**:
-- `<kanban-id>` (required — *except* with `--parallel`) · `<branch-suffix>` (optional, forwarded to /pickup) · `--parallel` (optional — work multiple tickets at once via worktree-isolated subagents; with no id = the whole ready queue, see **## Parallel mode**) · `--local` (optional, **the default** — kept as explicit flag for symmetry) · `--serial` (optional — modifier of the subagent machinery, implies `--parallel`: **one** subagent at a time, merge + deploy + cleanup per ticket right after it returns; see **## Serial and loop**) · `--loop` (optional — modifier, implies `--parallel`: after every merge re-query the ready queue and continue until it is empty; takes no ids) · `--here` (optional, local mode only — forwarded to `/ticket-flow:pickup --here`: adopt the worktree/branch this session is already in — orca, Conductor, worktrunk, bead-workflow-skills — instead of creating one; rejected with `--parallel`/`--serial`/`--loop`) · `--decisions a,b,c` / `--use-recommendations` (optional, mutually exclusive — resolve the spec's `## Decisions` section; see step 1.6; `--decisions` is rejected with `--parallel`/`--serial`/`--loop`).
+- `<kanban-id>` (required — *except* with `--parallel`) · `<branch-suffix>` (optional, forwarded to /pickup) · `--parallel` (optional — work multiple tickets at once via worktree-isolated subagents; with no id = the whole ready queue, see **## Parallel mode**) · `--local` (optional, **the default** — kept as explicit flag for symmetry) · `--serial` (optional — modifier of the subagent machinery, implies `--parallel`: **one** subagent at a time, merge + deploy + cleanup per ticket right after it returns; see **## Serial and loop**) · `--loop` (optional — modifier, implies `--parallel`: after every merge re-query the ready queue and continue until it is empty; takes no ids) · `--here` (optional, local mode only — forwarded to `/ticket-flow:pickup --here`: adopt the worktree/branch this session is already in — orca, Conductor, worktrunk, bead-workflow-skills — instead of creating one; rejected with `--parallel`/`--serial`/`--loop`) · `--decisions a,b,c` / `--use-recommendations` (optional, mutually exclusive — resolve the spec's `## Decisions` section; see step 1.7; `--decisions` is rejected with `--parallel`/`--serial`/`--loop`).
 
 ## Decide, don't prompt — clear-cut points get a default (all modes)
 
@@ -15,9 +15,9 @@ argument-hint: <ticket-id> | --parallel [ids…] | --serial --loop
 
 Three things still stop on purpose — they are neither clear-cut nor indifferent:
 
-- **`--local`'s per-phase checkpoints** — the "Ready for /implement? / finish?" review gates in steps 4/5/6. These *are* the value of `--local`; they stay. A checkpoint-free local run, if ever wanted, is a separate future flag.
+- **`--local`'s per-phase checkpoints** — the "Ready for /implement? / finish?" review gates in steps 3/4/5. These *are* the value of `--local`; they stay. A checkpoint-free local run, if ever wanted, is a separate future flag.
 - **`--parallel`'s P5 consolidated checkpoint** — merge all / subset / stop. **Not in `--serial`**: that modifier exists for unattended runs, so each ticket merges right after its subagent returns and P5 becomes a per-ticket *report*, not a question — the gates are finish's verification and the merge guard (finish Step 7). Want checkpoints? Use plain `--parallel` (one consolidated) or `--local` (per phase).
-- **The step-1.6 decision gate** — a spec's genuine `## Decisions` section is ambiguous by construction; resolved by the user or by `--use-recommendations`, never auto-decided here.
+- **The step-1.7 decision gate** — a spec's genuine `## Decisions` section is ambiguous by construction; resolved by the user or by `--use-recommendations`, never auto-decided here.
 
 Everything else — reference-fork with nothing to fork, sub-item strategy when there are no sub-items, "inline plan or structured plan" for a trivial bug, "which implement mode" when the plan/item makes it obvious — auto-decides. The phase skills (`pickup`, `implement`) follow the same rule; see their step notes.
 
@@ -66,11 +66,11 @@ eval "$("${CLAUDE_PLUGIN_ROOT}/skills/pickup/detect-worktree.sh")"   # LINKED WO
 - `LINKED=1`, `MODE=local`, `TF_OWNED=0` → the session sits in a worktree tf does not own (`$MANAGER`, or an unannounced one — worktrunk, bws, a manual `git worktree add`): set `HERE=1` and say so in one line, naming `$MANAGER` when it is set; pickup adopts it (its step 0 does the same detection and the branch-lock check, so an explicit `--here` is never required).
 - `LINKED=1`, `TF_OWNED=1` → STOP: this is a tf worktree of another ticket; run `/flow` from the main checkout.
 
-### 1.7. Route: parallel mode
+### 1.6. Route: parallel mode
 
-**If `MODE` is `parallel`** (also set by `--serial`/`--loop`) → steps 1.6–7 below do not apply (they are the single-ticket path). Jump to **## Parallel mode (`--parallel`)** at the end of this skill; `SERIAL`/`LOOP` select the deltas marked there.
+**If `MODE` is `parallel`** (also set by `--serial`/`--loop`) → the single-ticket path below (steps 1.7 through 6) does not apply. Jump to **## Parallel mode (`--parallel`)** at the end of this skill; `SERIAL`/`LOOP` select the deltas marked there.
 
-### 1.6. Decision gate
+### 1.7. Decision gate
 
 Before pickup, check whether the item's spec still has design decisions that need a human pick.
 
@@ -109,9 +109,9 @@ LOCK_BRANCH="$(bd_get_notes "$BD_ID" | grep -oE 'branch: [^ |]+' | head -1 | cut
 - **`branch:` line present** → a previous run claimed this ticket. Find its worktree: `git worktree list` — the entry whose branch matches `$LOCK_BRANCH`.
   - **Worktree exists** → resume. Skip step 2 entirely; `cd` into the worktree and decide the re-entry phase from its state, not from memory:
     1. `git -C <worktree> status --porcelain` + `git log <base>..$LOCK_BRANCH --oneline` — what is committed, what is half-done?
-    2. Read the spec's ACs (step 1.6 already resolved the spec path) and judge which are met by the code that is there.
-    3. **ACs still open, or uncommitted work** → re-enter at **step 4** (`/ticket-flow:implement` picks up the plan mid-way; its step 1 derives the item from the branch).
-    4. **All ACs look met** → re-enter at **step 6** (`/ticket-flow:finish` — its verification decides, not your impression).
+    2. Read the spec's ACs (step 1.7 already resolved the spec path) and judge which are met by the code that is there.
+    3. **ACs still open, or uncommitted work** → re-enter at **step 3** (`/ticket-flow:implement` picks up the plan mid-way; its step 1 derives the item from the branch).
+    4. **All ACs look met** → re-enter at **step 5** (`/ticket-flow:finish` — its verification decides, not your impression).
     5. Say in one line that this is a resume and which phase it re-enters.
   - **Worktree gone but branch exists** (cleanup died between remove and merge, or the harness auto-removed it) → the commits survive on `$LOCK_BRANCH`. Recreate a worktree on that branch (`git worktree add <path> $LOCK_BRANCH`), then resume as above.
   - **Branch gone too** → the lock is stale (a finished run that missed the note cleanup, or a discarded attempt). Say so, remove the stale `branch:` line via `bd_update_notes_remove_prefix "$BD_ID" "branch:"`, and continue with step 2 as a fresh run.
@@ -128,9 +128,9 @@ Pickup returns the worktree path — keep it in `$WORKTREE`.
 
 ### 2.5. Record resolved decisions (after pickup)
 
-Only when step 1.6 resolved decisions via `--decisions` / `--use-recommendations` — otherwise skip.
+Only when step 1.7 resolved decisions via `--decisions` / `--use-recommendations` — otherwise skip.
 
-Append a `## Decision Log` to the **bottom** of the worktree's copy of the spec (`$WORKTREE/<spec-path>` — the path step 1.6 resolved) — same format the `/ticket-flow:spec` review step uses:
+Append a `## Decision Log` to the **bottom** of the worktree's copy of the spec (`$WORKTREE/<spec-path>` — the path step 1.7 resolved) — same format the `/ticket-flow:spec` review step uses:
 
 ```
 ## Decision Log
@@ -150,7 +150,7 @@ cd "$WORKTREE" && git add <spec-path> \
 
 `/ticket-flow:implement` then reads a spec whose decisions are already locked.
 
-### 4. Phase 2: implement
+### 3. Phase 2: implement
 
 Checkpoint output:
 ```
@@ -169,7 +169,7 @@ Wait for user decision. On OK: `Skill(ticket-flow:implement)`.
 
 On implement failure: stop, inform the user.
 
-### 5. Checkpoint after implement
+### 4. Checkpoint after implement
 
 ```
 ✓ /ticket-flow:implement for #<id> complete
@@ -183,11 +183,11 @@ Ready for /ticket-flow:finish?
 [ ] Stop — I'll run the manual test first
 ```
 
-### 6. Phase 3: finish
+### 5. Phase 3: finish
 
 On OK: `Skill(ticket-flow:finish)`. On failure: stop, inform the user. No auto rollback.
 
-### 7. Final report
+### 6. Final report
 
 After `/finish` closes the bd state, build the report from bd:
 
@@ -240,7 +240,7 @@ Prints `BASE_REF`, `HAS_REMOTE`, `DRIFT`, `VERDICT` and exits non-zero on `VERDI
 
 ### P2. Decision gate — all tickets, up front
 
-Run the step 1.6 decision gate for **every** ticket in the set. If **any** ticket has an unresolved `## Decisions` section (no covering `## Decision Log`), **STOP the whole batch** — never dispatch a partial set. Report which tickets need decisions and how to resolve them (the `/ticket-flow:spec` review step, or `--use-recommendations`). `--decisions` is rejected with `--parallel` (positional picks can't map across multiple tickets).
+Run the step 1.7 decision gate for **every** ticket in the set. If **any** ticket has an unresolved `## Decisions` section (no covering `## Decision Log`), **STOP the whole batch** — never dispatch a partial set. Report which tickets need decisions and how to resolve them (the `/ticket-flow:spec` review step, or `--use-recommendations`). `--decisions` is rejected with `--parallel` (positional picks can't map across multiple tickets).
 
 **`--loop` exception**: the set is dynamic, so an unresolved gate does not stop the run — the ticket is **deferred** (left in Backlog, listed in the final report with the two ways to resolve it) and the loop continues with the rest. `--use-recommendations` resolves every gate up front and is the intended companion flag for unattended runs.
 
