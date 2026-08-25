@@ -119,21 +119,37 @@ case "$line_c" in
 esac
 
 # --- AC4: aggregates ---------------------------------------------------
-case "$OUT" in *"AGGREGATE agents=3 resolved=2 unresolved=1"*)
-  ok "AC4: aggregate counts agents/resolved/unresolved correctly" ;;
-  *) nope "AC4: aggregate counts agents/resolved/unresolved correctly" "$OUT" ;; esac
+case "$OUT" in *"AGGREGATE agents=3"*)
+  ok "AC4: aggregate counts the total agent population" ;;
+  *) nope "AC4: aggregate counts the total agent population" "$OUT" ;; esac
 
-case "$OUT" in *"AGGREGATE total_tokens=1912"*)
-  ok "AC4: total_tokens sums only resolved agents (1860+52)" ;;
-  *) nope "AC4: total_tokens sums only resolved agents (1860+52)" "$OUT" ;; esac
+case "$OUT" in *"AGGREGATE telemetry_rows=3 resolved=2 unresolved=1"*)
+  ok "AC4: aggregate counts telemetry rows/resolved/unresolved correctly" ;;
+  *) nope "AC4: aggregate counts telemetry rows/resolved/unresolved correctly" "$OUT" ;; esac
+
+case "$OUT" in *"AGGREGATE resolved_total_tokens=1912"*)
+  ok "AC4: resolved_total_tokens sums only resolved agents (1860+52)" ;;
+  *) nope "AC4: resolved_total_tokens sums only resolved agents (1860+52)" "$OUT" ;; esac
 
 case "$OUT" in *"AGGREGATE invalid_verdict_share_pct=2.7 invalid_verdict_tokens=52 invalid_verdict_agents=1"*)
   ok "AC4: invalid-verdict token share isolates agentB's spend" ;;
   *) nope "AC4: invalid-verdict token share isolates agentB's spend" "$OUT" ;; esac
 
-case "$OUT" in *"AGGREGATE duration_median_s=8 duration_max_s=12 duration_n=2"*)
-  ok "AC4: duration median/max computed over resolved agents only" ;;
-  *) nope "AC4: duration median/max computed over resolved agents only" "$OUT" ;; esac
+case "$OUT" in *"AGGREGATE resolved_duration_median_s=8 resolved_duration_max_s=12 resolved_duration_n=2"*)
+  ok "AC3/AC4: duration aggregate names itself resolved-only, computed over resolved agents" ;;
+  *) nope "AC3/AC4: duration aggregate names itself resolved-only, computed over resolved agents" "$OUT" ;; esac
+
+# --- AC2: states must sum to the agents total, checked arithmetically ------
+agents_n=$(printf '%s\n' "$OUT" | sed -n 's/^AGGREGATE agents=\([0-9]*\)$/\1/p')
+states_line=$(printf '%s\n' "$OUT" | grep '^AGGREGATE states ')
+d=$(printf '%s\n' "$states_line" | sed -n 's/.*done=\([0-9]*\).*/\1/p')
+r=$(printf '%s\n' "$states_line" | sed -n 's/.*running=\([0-9]*\).*/\1/p')
+s=$(printf '%s\n' "$states_line" | sed -n 's/.*stalled?=\([0-9]*\).*/\1/p')
+u=$(printf '%s\n' "$states_line" | sed -n 's/.*unknown=\([0-9]*\)$/\1/p')
+states_sum=$((d + r + s + u))
+[ -n "$agents_n" ] && [ "$states_sum" -eq "$agents_n" ] \
+  && ok "AC2: states (done=$d running=$r stalled?=$s unknown=$u) sum to agents=$agents_n" \
+  || nope "AC2: states sum to agents" "agents=$agents_n states_sum=$states_sum ($states_line)"
 
 case "$OUT" in *"MODEL model-x tokens=1860"*)
   ok "AC4: per-model consumption breakdown (model-x)" ;;
@@ -151,13 +167,18 @@ RC2=$?
 case "$OUT2" in *"no telemetry log"*) ok "no telemetry log yet: says so instead of crashing" ;;
                 *) nope "no telemetry log yet: says so instead of crashing" "$OUT2" ;; esac
 
-# --- Stall signal: state in {done, running, stalled?} ----------------------
+# --- Stall signal: state in {done, running, stalled?, unknown} -------------
 # Independent fixture from the one above: one telemetry row (state=done
 # regardless of transcript staleness), one orphan transcript (no telemetry
 # row) with a recent last-timestamp (state=running), one orphan transcript
-# with a stale last-timestamp (state=stalled?). "now" and the stall
-# threshold are both fixed via TICKET_FLOW_NOW / CLAUDE_FLOW_STALL_HINT_S so
-# the numbers are exact, not clock-dependent.
+# with a stale-but-post-boundary last-timestamp (state=stalled?), and one
+# orphan transcript whose last activity predates the OLDEST telemetry "ts"
+# entirely (state=unknown, ticket-flow-4a4 AC1 — this is what the hook
+# install day looks like: transcripts from before the hook existed must
+# never read as "stalled", because they could never have produced a
+# telemetry row in the first place). "now" and the stall threshold are both
+# fixed via TICKET_FLOW_NOW / CLAUDE_FLOW_STALL_HINT_S so the numbers are
+# exact, not clock-dependent.
 ROOT2="$WORK/transcripts2"
 LOG2="$WORK/flow-runs2.jsonl"
 NOWFILE="$WORK/now-epoch.txt"
@@ -201,13 +222,23 @@ running_ts = now - timedelta(seconds=30)
 write_transcript(os.path.join(root, "proj-y", "sessRunning", "subagents", "agent-agentRunning.jsonl"), running_ts)
 
 # stalled?: no telemetry row, last transcript entry 900s before "now" (the
-# test invocation below sets the stall hint to 300s).
+# test invocation below sets the stall hint to 300s) -- but still AFTER the
+# earliest telemetry "ts" (3 hours before "now", see below), so the hook
+# window covers it and the freshness split applies normally.
 stalled_ts = now - timedelta(seconds=900)
 write_transcript(os.path.join(root, "proj-y", "sessStalled", "subagents", "agent-agentStalled.jsonl"), stalled_ts)
 
+# unknown (AC1): no telemetry row, last transcript entry 5 hours before
+# "now" -- OLDER than the earliest telemetry "ts" (3 hours before "now").
+# This transcript went quiet before the hook could have logged anything for
+# it: it must read as unknown, never as stalled?, no matter how wide
+# CLAUDE_FLOW_STALL_HINT_S is set.
+prehook_ts = now - timedelta(hours=5)
+write_transcript(os.path.join(root, "proj-y", "sessPreHook", "subagents", "agent-agentPreHook.jsonl"), prehook_ts)
+
 with open(log_path, "w", encoding="utf-8") as fh:
     fh.write(json.dumps({
-        "ts": now.isoformat(), "session_id": "sessDone", "agent_id": "agentDone",
+        "ts": (now - timedelta(hours=3)).isoformat(), "session_id": "sessDone", "agent_id": "agentDone",
         "agent_type": "general-purpose", "cwd": "/d", "ticket": "tf-done", "verdict_valid": True,
         "proven": 1, "residual": 0, "blockers": 0, "commits": 1, "branch": "wt-done",
         "sha": "aaa1111", "review": "done ok",
@@ -240,22 +271,42 @@ esac
 line_stalled=$(printf '%s\n' "$OUT2S" | grep 'agent_id=agentStalled ')
 case "$line_stalled" in
   *"session_id=sessStalled"*"since_last_s=900"*"state=stalled?"*)
-    ok "stall-signal: a stale orphan transcript (no telemetry row) is state=stalled?" ;;
-  *) nope "stall-signal: a stale orphan transcript (no telemetry row) is state=stalled?" "$line_stalled" ;;
+    ok "stall-signal: a stale but post-boundary orphan transcript is state=stalled?" ;;
+  *) nope "stall-signal: a stale but post-boundary orphan transcript is state=stalled?" "$line_stalled" ;;
 esac
 
-case "$OUT2S" in *"AGGREGATE states done=1 running=1 stalled?=1"*)
+line_prehook=$(printf '%s\n' "$OUT2S" | grep 'agent_id=agentPreHook ')
+case "$line_prehook" in
+  *"ticket= "*"session_id=sessPreHook"*"since_last_s=18000"*"state=unknown"*"verdict_valid= "*)
+    ok "AC1: an orphan transcript older than the earliest telemetry ts is state=unknown, not stalled?" ;;
+  *) nope "AC1: an orphan transcript older than the earliest telemetry ts is state=unknown, not stalled?" "$line_prehook" ;;
+esac
+
+case "$OUT2S" in *"AGGREGATE states done=1 running=1 stalled?=1 unknown=1"*)
   ok "stall-signal: aggregate counts exactly one agent per state" ;;
   *) nope "stall-signal: aggregate counts exactly one agent per state" "$OUT2S" ;; esac
 
+# AC2: states sum to the agents total here too (arithmetic, not string match).
+agents2_n=$(printf '%s\n' "$OUT2S" | sed -n 's/^AGGREGATE agents=\([0-9]*\)$/\1/p')
+states2_line=$(printf '%s\n' "$OUT2S" | grep '^AGGREGATE states ')
+d2=$(printf '%s\n' "$states2_line" | sed -n 's/.*done=\([0-9]*\).*/\1/p')
+r2=$(printf '%s\n' "$states2_line" | sed -n 's/.*running=\([0-9]*\).*/\1/p')
+s2=$(printf '%s\n' "$states2_line" | sed -n 's/.*stalled?=\([0-9]*\).*/\1/p')
+u2=$(printf '%s\n' "$states2_line" | sed -n 's/.*unknown=\([0-9]*\)$/\1/p')
+states2_sum=$((d2 + r2 + s2 + u2))
+[ -n "$agents2_n" ] && [ "$states2_sum" -eq "$agents2_n" ] \
+  && ok "AC2: stall-signal fixture — states sum ($states2_sum) equals agents ($agents2_n)" \
+  || nope "AC2: stall-signal fixture — states sum equals agents" "agents=$agents2_n states_sum=$states2_sum ($states2_line)"
+
 # The stall hint is a display split ONLY — moving it must not touch the
-# done row (already reported), only reclassify the running/stalled? pair.
+# done row (already reported) or the unknown row (boundary-based, not
+# hint-based), only reclassify the running/stalled? pair.
 OUT2S_WIDE=$(CLAUDE_FLOW_TELEMETRY_LOG="$LOG2" CLAUDE_FLOW_TRANSCRIPT_ROOT="$ROOT2" \
              TICKET_FLOW_NOW="$TICKET_FLOW_NOW" CLAUDE_FLOW_STALL_HINT_S=1000 \
              "$SCRIPT_UNDER_TEST")
-case "$OUT2S_WIDE" in *"AGGREGATE states done=1 running=2 stalled?=0"*)
-  ok "stall-signal: CLAUDE_FLOW_STALL_HINT_S widens the running window (display only)" ;;
-  *) nope "stall-signal: CLAUDE_FLOW_STALL_HINT_S widens the running window (display only)" "$OUT2S_WIDE" ;; esac
+case "$OUT2S_WIDE" in *"AGGREGATE states done=1 running=2 stalled?=0 unknown=1"*)
+  ok "stall-signal: CLAUDE_FLOW_STALL_HINT_S widens the running window (display only), unknown is unaffected" ;;
+  *) nope "stall-signal: CLAUDE_FLOW_STALL_HINT_S widens the running window (display only), unknown is unaffected" "$OUT2S_WIDE" ;; esac
 
 echo "  $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
