@@ -308,5 +308,79 @@ case "$OUT2S_WIDE" in *"AGGREGATE states done=1 running=2 stalled?=0 unknown=1"*
   ok "stall-signal: CLAUDE_FLOW_STALL_HINT_S widens the running window (display only), unknown is unaffected" ;;
   *) nope "stall-signal: CLAUDE_FLOW_STALL_HINT_S widens the running window (display only), unknown is unaffected" "$OUT2S_WIDE" ;; esac
 
+# --- Duplicate telemetry rows for the same agent (ticket-flow-4a4 followup)
+# Verified against this machine's real log: SubagentStop can fire more than
+# once for the same agent, re-reporting identical facts seconds apart. Each
+# raw row must still print its own AGENT line, but the agent's tokens must
+# be counted exactly once in the aggregates, or a double-fired agent
+# inflates resolved_total_tokens (and invalid_verdict_tokens, when its
+# verdict is invalid) — the same "a loop counts twice" failure named in
+# Defect 2, one level deeper.
+ROOT3="$WORK/transcripts3"
+LOG3="$WORK/flow-runs3.jsonl"
+
+python3 -c '
+import json, os, sys
+
+root, log_path = sys.argv[1], sys.argv[2]
+
+d_dir = os.path.join(root, "proj-z", "sessDup", "subagents")
+os.makedirs(d_dir, exist_ok=True)
+with open(os.path.join(d_dir, "agent-agentDup.jsonl"), "w", encoding="utf-8") as fh:
+    fh.write(json.dumps({"type": "user", "timestamp": "2026-08-20T08:00:00.000Z"}) + "\n")
+    fh.write(json.dumps({
+        "type": "assistant", "timestamp": "2026-08-20T08:00:10.000Z",
+        "message": {"model": "model-z",
+                    "usage": {"input_tokens": 0, "output_tokens": 1000,
+                              "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0},
+                    "content": [{"type": "tool_use"}, {"type": "tool_use"}]},
+    }) + "\n")
+
+with open(log_path, "w", encoding="utf-8") as fh:
+    for ts in ("2026-08-20T08:00:11+02:00", "2026-08-20T08:00:31+02:00", "2026-08-20T08:00:51+02:00"):
+        fh.write(json.dumps({
+            "ts": ts, "session_id": "sessDup", "agent_id": "agentDup",
+            "agent_type": "general-purpose", "cwd": "/dup", "ticket": None, "verdict_valid": False,
+            "proven": None, "residual": None, "blockers": None, "commits": None, "branch": None,
+            "sha": None, "review": None,
+        }) + "\n")
+' "$ROOT3" "$LOG3"
+
+OUT3=$(CLAUDE_FLOW_TELEMETRY_LOG="$LOG3" CLAUDE_FLOW_TRANSCRIPT_ROOT="$ROOT3" "$SCRIPT_UNDER_TEST")
+RC3=$?
+[ "$RC3" -eq 0 ] && ok "dup-rows: exits 0" || nope "dup-rows: exits 0" "rc=$RC3"
+
+dup_line_count=$(printf '%s\n' "$OUT3" | grep -c 'agent_id=agentDup ')
+[ "$dup_line_count" -eq 3 ] && ok "dup-rows: every raw telemetry row still gets its own AGENT line (3)" \
+                             || nope "dup-rows: every raw telemetry row still gets its own AGENT line" "count=$dup_line_count"
+
+case "$OUT3" in *"AGGREGATE agents=1"*)
+  ok "dup-rows: 3 telemetry rows for one agent count as 1 agent" ;;
+  *) nope "dup-rows: 3 telemetry rows for one agent count as 1 agent" "$OUT3" ;; esac
+
+case "$OUT3" in *"AGGREGATE telemetry_rows=3 resolved=1 unresolved=0"*)
+  ok "dup-rows: telemetry_rows keeps the raw count, resolved is deduped to 1" ;;
+  *) nope "dup-rows: telemetry_rows keeps the raw count, resolved is deduped to 1" "$OUT3" ;; esac
+
+case "$OUT3" in *"AGGREGATE resolved_total_tokens=1000"*)
+  ok "dup-rows: resolved_total_tokens counts the agent's spend once, not 3x (1000, not 3000)" ;;
+  *) nope "dup-rows: resolved_total_tokens counts the agent's spend once, not 3x (1000, not 3000)" "$OUT3" ;; esac
+
+case "$OUT3" in *"AGGREGATE invalid_verdict_share_pct=100.0 invalid_verdict_tokens=1000 invalid_verdict_agents=1"*)
+  ok "dup-rows: invalid-verdict aggregate also deduped (not 3x tokens or 3 agents)" ;;
+  *) nope "dup-rows: invalid-verdict aggregate also deduped (not 3x tokens or 3 agents)" "$OUT3" ;; esac
+
+case "$OUT3" in *"AGGREGATE resolved_duration_median_s=10 resolved_duration_max_s=10 resolved_duration_n=1"*)
+  ok "dup-rows: duration counted once (n=1), not once per duplicate row" ;;
+  *) nope "dup-rows: duration counted once (n=1), not once per duplicate row" "$OUT3" ;; esac
+
+case "$OUT3" in *"MODEL model-z tokens=1000"*)
+  ok "dup-rows: per-model breakdown counts the agent's spend once" ;;
+  *) nope "dup-rows: per-model breakdown counts the agent's spend once" "$OUT3" ;; esac
+
+case "$OUT3" in *"AGGREGATE states done=1 running=0 stalled?=0 unknown=0"*)
+  ok "dup-rows: states also dedupe to a single done agent" ;;
+  *) nope "dup-rows: states also dedupe to a single done agent" "$OUT3" ;; esac
+
 echo "  $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

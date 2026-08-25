@@ -334,12 +334,29 @@ for r in rows:
     if earliest_ts_dt is None or dt < earliest_ts_dt:
         earliest_ts_dt = dt
 
-for r in rows:
+# A telemetry row can legitimately repeat for the same agent — verified on
+# this machines own log: SubagentStop fired 3 times for one agent and 2
+# times for another, seconds apart, re-reporting identical facts each time.
+# Every raw row still gets its own AGENT print line below (that repetition
+# is itself a useful signal to see), but a unique agent must contribute to
+# the resolved/token/duration/model aggregates exactly once, or a
+# double-fired agents spend gets double- or triple-counted into
+# resolved_total_tokens -- the same "a loop counts twice" failure mode named
+# in ticket-flow-4a4 Defect 2, just one level deeper. The LAST occurrence
+# in the log is the one that counts: the transcript path is re-read fresh
+# on every occurrence rather than snapshotted per-row, so a later duplicate
+# has seen at least as much of it as an earlier one.
+last_index_by_key = {}
+for i, r in enumerate(rows):
+    last_index_by_key[(r.get("session_id"), r.get("agent_id"))] = i
+
+for i, r in enumerate(rows):
     session_id = r.get("session_id")
     agent_id = r.get("agent_id")
     key = (session_id, agent_id)
     is_new_agent = key not in seen_agents
     seen_agents.add(key)
+    is_authoritative = last_index_by_key.get(key) == i
     ticket = r.get("ticket")
     verdict_valid = bool(r.get("verdict_valid"))
     blockers = r.get("blockers")
@@ -351,28 +368,30 @@ for r in rows:
         state_counts["done"] += 1
 
     if usage is None:
-        unresolved += 1
+        if is_authoritative:
+            unresolved += 1
         out_lines.append(agent_line(
             ticket, session_id, agent_id, None, None, None, None, None, None,
             "done", str(verdict_valid).lower(), blockers, review,
         ))
         continue
 
-    resolved += 1
     agent_total = (
         usage["output_tokens"]
         + usage["cache_read_tokens"]
         + usage["cache_creation_tokens"]
         + usage["input_tokens"]
     )
-    total_tokens += agent_total
-    if not verdict_valid:
-        invalid_tokens += agent_total
-        invalid_agents += 1
-    if usage["duration_s"] is not None:
-        durations.append(usage["duration_s"])
-    if usage["model"]:
-        by_model[usage["model"]] = by_model.get(usage["model"], 0) + agent_total
+    if is_authoritative:
+        resolved += 1
+        total_tokens += agent_total
+        if not verdict_valid:
+            invalid_tokens += agent_total
+            invalid_agents += 1
+        if usage["duration_s"] is not None:
+            durations.append(usage["duration_s"])
+        if usage["model"]:
+            by_model[usage["model"]] = by_model.get(usage["model"], 0) + agent_total
 
     out_lines.append(agent_line(
         ticket, session_id, agent_id, usage["model"], usage["output_tokens"],
