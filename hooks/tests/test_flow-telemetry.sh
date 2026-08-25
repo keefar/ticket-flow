@@ -71,6 +71,38 @@ linecount() {
   [ -f "$1" ] && wc -l < "$1" | tr -d ' ' || echo 0
 }
 
+# raw_field <log-path> <field-name> — the JSON TYPE of the last line's value
+# for <field-name>: JSON_TRUE / JSON_FALSE / JSON_NULL / OTHER:<repr> /
+# MISSING. Distinct from field() above, which prints Python's str(v) — that
+# blurs exactly the distinction the tristate tests need (str(True) and
+# str("true") both read like "true"-ish from bash; a JSON boolean and a JSON
+# string are not the same fact).
+raw_field() {
+  python3 -c '
+import json, sys
+path, key = sys.argv[1], sys.argv[2]
+try:
+    with open(path, encoding="utf-8") as fh:
+        lines = [l for l in fh if l.strip()]
+    row = json.loads(lines[-1])
+except Exception:
+    print("MISSING")
+    sys.exit(0)
+if key not in row:
+    print("MISSING")
+    sys.exit(0)
+v = row[key]
+if v is True:
+    print("JSON_TRUE")
+elif v is False:
+    print("JSON_FALSE")
+elif v is None:
+    print("JSON_NULL")
+else:
+    print("OTHER:%r" % (v,))
+' "$1" "$2"
+}
+
 echo "test_flow-telemetry.sh"
 
 # --- AC1: exactly one line, nothing on stdout ------------------------------
@@ -207,6 +239,87 @@ got=$(field "$LOG7B" review)
 got_len=${#got}
 [ "$got_len" -le 200 ] && ok "AC7: an over-long review string is capped at 200 chars" \
                         || nope "AC7: an over-long review string is capped at 200 chars" "len=$got_len"
+
+# --- tristate verdict_valid: true / false / null are three different facts -
+# Regression coverage for the real 2026-08-25 failure: installed to
+# ~/.claude/hooks/, the sibling-path fallback did not resolve, and EVERY
+# verdict came out as JSON false — indistinguishable from "checked and
+# rejected". These three cases pin true/false/null to their own trigger so a
+# future change cannot collapse two of them back together.
+echo
+echo "tristate verdict_valid (true / false / null are three different facts)"
+
+HOOK_DIR=$(dirname "$HOOK")
+REPO_ROOT=$(cd "$HOOK_DIR/.." && pwd)
+REAL_CHECK="$REPO_ROOT/skills/flow/verdict-check.sh"
+
+# payload <session_id> <agent_id> <cwd> <msg> <out_file>
+payload() {
+  python3 -c '
+import json, sys
+print(json.dumps({
+    "hook_event_name": "SubagentStop",
+    "session_id": sys.argv[1], "agent_id": sys.argv[2],
+    "agent_type": "general-purpose", "cwd": sys.argv[3],
+    "last_assistant_message": sys.argv[4],
+}))
+' "$1" "$2" "$3" "$4" > "$5"
+}
+
+# 1) checker reachable via CLAUDE_FLOW_VERDICT_CHECK, valid verdict -> JSON true
+LOG_TRI_TRUE="$WORK/tristate-true.jsonl"
+d=$(mktemp -d -p "$WORK")
+payload sessTriTrue agentTriTrue /tmp/wtTriTrue "$GOOD_VERDICT" "$d/payload.json"
+CLAUDE_FLOW_VERDICT_CHECK="$REAL_CHECK" CLAUDE_FLOW_TELEMETRY_LOG="$LOG_TRI_TRUE" \
+  "$HOOK" < "$d/payload.json" > "$d/o.txt" 2> "$d/e.txt"
+rc=$?
+[ "$rc" -eq 0 ] && ok "tristate/true: hook exits 0 (checker reachable via CLAUDE_FLOW_VERDICT_CHECK)" \
+                || nope "tristate/true: hook exits 0 (checker reachable via CLAUDE_FLOW_VERDICT_CHECK)" "rc=$rc"
+got=$(raw_field "$LOG_TRI_TRUE" verdict_valid)
+[ "$got" = "JSON_TRUE" ] && ok "tristate: reachable checker + valid verdict -> verdict_valid is JSON true" \
+                          || nope "tristate: reachable checker + valid verdict -> verdict_valid is JSON true" "got=$got"
+
+# 2) checker unreachable on ALL THREE resolution paths -> JSON null, row
+#    still written. Reproduced by running a COPY of the hook from an
+#    isolated dir with no ../skills sibling, with both
+#    CLAUDE_FLOW_VERDICT_CHECK and CLAUDE_PLUGIN_ROOT explicitly stripped so
+#    none of the three resolution paths can succeed — this is exactly the
+#    "installed to ~/.claude/hooks/" shape that triggered the real bug.
+ISOLATED_DIR="$WORK/isolated-hook"
+mkdir -p "$ISOLATED_DIR"
+cp "$HOOK" "$ISOLATED_DIR/flow-telemetry.sh"
+chmod +x "$ISOLATED_DIR/flow-telemetry.sh"
+
+LOG_TRI_NULL="$WORK/tristate-null.jsonl"
+d=$(mktemp -d -p "$WORK")
+payload sessTriNull agentTriNull /tmp/wtTriNull "$GOOD_VERDICT" "$d/payload.json"
+env -u CLAUDE_FLOW_VERDICT_CHECK -u CLAUDE_PLUGIN_ROOT \
+  CLAUDE_FLOW_TELEMETRY_LOG="$LOG_TRI_NULL" \
+  "$ISOLATED_DIR/flow-telemetry.sh" < "$d/payload.json" > "$d/o.txt" 2> "$d/e.txt"
+rc=$?
+[ "$rc" -eq 0 ] && ok "tristate/null: hook exits 0 (checker unreachable on all 3 paths)" \
+                || nope "tristate/null: hook exits 0 (checker unreachable on all 3 paths)" "rc=$rc"
+n=$(linecount "$LOG_TRI_NULL")
+[ "$n" -eq 1 ] && ok "tristate/null: a row is still written when the checker cannot be found" \
+              || nope "tristate/null: a row is still written when the checker cannot be found" "lines=$n"
+got=$(raw_field "$LOG_TRI_NULL" verdict_valid)
+[ "$got" = "JSON_NULL" ] && ok "tristate: unreachable checker -> verdict_valid is JSON null, not false" \
+                          || nope "tristate: unreachable checker -> verdict_valid is JSON null, not false" "got=$got"
+
+# 3) checker reachable, report has no valid verdict -> JSON false — distinct
+#    from case 2: "checked and rejected" is not "could not check".
+NO_VERDICT_PROSE="Finished the ticket. Ran the tests, all green, nothing else to report here."
+LOG_TRI_FALSE="$WORK/tristate-false.jsonl"
+d=$(mktemp -d -p "$WORK")
+payload sessTriFalse agentTriFalse /tmp/wtTriFalse "$NO_VERDICT_PROSE" "$d/payload.json"
+CLAUDE_FLOW_VERDICT_CHECK="$REAL_CHECK" CLAUDE_FLOW_TELEMETRY_LOG="$LOG_TRI_FALSE" \
+  "$HOOK" < "$d/payload.json" > "$d/o.txt" 2> "$d/e.txt"
+rc=$?
+[ "$rc" -eq 0 ] && ok "tristate/false: hook exits 0 (checker reachable, no valid verdict in report)" \
+                || nope "tristate/false: hook exits 0 (checker reachable, no valid verdict in report)" "rc=$rc"
+got=$(raw_field "$LOG_TRI_FALSE" verdict_valid)
+[ "$got" = "JSON_FALSE" ] && ok "tristate: reachable checker + no valid verdict -> verdict_valid is JSON false" \
+                           || nope "tristate: reachable checker + no valid verdict -> verdict_valid is JSON false" "got=$got"
 
 echo "  $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
