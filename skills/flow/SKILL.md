@@ -295,15 +295,18 @@ You are in an isolated git worktree. Implement this ticket end-to-end:
   *proven* or *residual*:
   · step 2 — typecheck, tests and the e2e check from the recipe above,
     plus the testable-surface gate;
-  · step 3 — the review, and it is NOT optional: invoke the `code-review`
-    skill at level `high` (skip only for a genuinely trivial change of
-    ≤50 lines, and say so). It runs in the background and reports back
-    later — wait for its result and act on the findings before you write
-    the verdict. If `code-review` is not in your skill list or
-    the call fails, do NOT substitute your own assessment: put
-    `not run (code-review unavailable)` in the verdict's `review`
-    field and say the same in the prose, so the controller can hand
-    `/code-review high` to the user. Never `ultra` — it cannot be started
+  · step 3 — the review, and it is NOT optional (skip only for a genuinely
+    trivial change of ≤50 lines, and say so). If the project's CLAUDE.md /
+    `.claude/rules/` names a dedicated review agent, dispatch that one.
+    Otherwise dispatch **one** `Agent` call yourself — `subagent_type:
+    "general-purpose"`, `model: "haiku"` — with the full diff
+    (`git diff <target-branch>...HEAD`) embedded directly in its prompt;
+    it reviews the diff it's handed, it does not collect its own. Wait
+    for its result and act on the findings before you write the verdict.
+    If the dispatch fails, do NOT substitute your own assessment: put
+    `not run (<reason>)` in the verdict's `review` field and say the
+    same in the prose, so the controller can hand `/code-review high` to
+    the user as a deeper option. Never `ultra` — it cannot be started
     by a model at all;
   · step 4 — deploy only if the project defines one.
   [--serial: steps 2–3 only — do NOT deploy; the controller deploys from
