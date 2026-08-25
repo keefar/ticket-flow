@@ -295,15 +295,22 @@ You are in an isolated git worktree. Implement this ticket end-to-end:
   *proven* or *residual*:
   · step 2 — typecheck, tests and the e2e check from the recipe above,
     plus the testable-surface gate;
-  · step 3 — do NOT invoke the `code-review` skill (cost decision
-    2026-08-25: at level high it fans out ~8 finder agents plus verifiers —
-    several 100k tokens per ticket, and a spend-limit death mid-fan-out is
-    a total loss; measured on the DSP autopilot run: three dead review
-    attempts, zero findings delivered). The review happens controller-side
-    instead: one single cheap diff-review agent (`model: haiku`, given the
-    ticket's commit range) after the merge, before the deploy — see P6
-    step 3a. Put `deferred to controller diff-review` in the verdict's
-    `review` field. Do not substitute your own assessment for a review;
+  · step 3 — the review, and it is NOT optional (skip only for a genuinely
+    trivial change of ≤50 lines, and say so). If the project's CLAUDE.md /
+    `.claude/rules/` names a dedicated review agent, dispatch that one.
+    Otherwise dispatch **one** `Agent` call yourself — `subagent_type:
+    "general-purpose"`, `model: "haiku"` — with the full diff
+    (`git diff <target-branch>...HEAD`) embedded directly in its prompt;
+    it reviews the diff it's handed, it does not collect its own. Ask it
+    to check for correctness bugs, contradictions with the surrounding
+    code/doc text, and call sites or other references the change may
+    have missed. Wait for its result and act on the findings before you
+    write the verdict.
+    If the dispatch fails, do NOT substitute your own assessment: put
+    `not run (<reason>)` in the verdict's `review` field and say the
+    same in the prose, so the controller can hand `/code-review high` to
+    the user as a deeper option. Never `ultra` — it cannot be started
+    by a model at all;
   · step 4 — deploy only if the project defines one.
   [--serial: steps 2–3 only — do NOT deploy; the controller deploys from
   the merged target branch after the merge.]
@@ -353,10 +360,11 @@ For each ticket whose subagent succeeded, **one at a time** — never two at onc
 1. **Verify the commits are on the expected branch** (mandatory, before any merge attempt): `git branch --contains <sha>` with the last-commit sha from the verdict (`SHA`) — the expected `worktree-agent-<hash>` branch must appear. `isolation: worktree` dispatches occasionally commit straight onto the base branch instead, and the subagent's report still reads like success; only this check catches it. If the expected branch is missing: `git rebase <target-branch>` run inside that worktree replays the commit onto the right base without losing it — then re-run the check. Do not merge until it passes.
 2. `cd <main-repo>` — commit dirty `.beads/` yourself, exactly as in `skills/finish/SKILL.md` step 5c: skip when `.beads/` is gitignored (`git check-ignore -q .beads/issues.jsonl`), otherwise `git add` the dirty `.beads/` exports and `git commit -m "chore: bd-Export-Sync vor Merge"` on the target branch — never leave it to the user (a dirty `.beads/` makes every merge refuse with "Your local changes … would be overwritten").
 3. `git merge <worktree-agent-branch>` — on a conflict: stop this ticket, leave it for the user, continue with the rest.
+3a. **Catch-up review — only when the subagent's did not happen** (all modes). P4 step 3 has the subagent run one cheap diff-review inside its worktree, *before* the merge; that is where a finding is still cheap to act on. Read `REVIEW` from the verdict: a real result (`<level> — <n> findings`) means the review happened — **do not run a second one**, the whole point of the change was to stop paying twice. A `not run (…)` or `not reported` means it did not: run it now, controller-side — ONE agent, `model: haiku`, read-only, the merged commit range named in the prompt, focus on real correctness bugs, no style findings — and act on its findings before anything downstream. Project-specific risk reviews (e.g. a safety reviewer wired into the project's deploy skill) stay as the project defines them, on top of this. Never `code-review` at level `high` here: it fans out ~8 finder agents plus verifiers, several 100k tokens per ticket, and a spend-limit death mid-fan-out loses all of it (measured on the DSP autopilot run 2026-08-24/25: three dead attempts, zero findings delivered). `/code-review high` stays a recommendation the report hands to the user.
 4. Finish the ticket: run `skills/finish/SKILL.md` steps 6–7 — gating (residual → Testing, none → Done) from the subagent's classification, the state update (bd only — never `kanban-render.sh` in the workflow), and worktree cleanup **behind finish Step 7's guard**: first `git -C <main-repo> merge-base --is-ancestor <worktree-agent-branch> <target-branch>` (fails → the merge in step 3 did not land, e.g. it ran from a cwd where that branch was already HEAD and printed "Already up to date" — **stop this ticket, no cleanup, no `-D`**) and `git -C <path> status --porcelain` empty; only then **`git worktree remove <path>`**. No `git worktree unlock` first: since 2.1.157 a Claude-managed worktree is left **unlocked** when its agent ends (often removed by the harness outright), so the lock is gone by the time the controller cleans up — a lock that *is* still there means a live session holds the worktree, and forcing past it is wrong. Then `git branch -D <worktree-agent-branch>` (safe only because the guard proved containment). On an `Operation not permitted` from the remove, apply finish Step 7's verify-then-defer rule: `git worktree list` decides (the error is often fake); if the path survives, leave it standing and hand the manual commands to the user — never delete the directory yourself. A `cannot remove a locked working tree` is the other error and is not ambiguous: `git worktree list` names the lock's owning pid — gone (a crashed agent's stale lock) → `git worktree unlock <path>` and retry the removal once; alive → a session still holds it, leave it.
 5. On a reported hard blocker: file the escalation bead now, controller-side, per `skills/implement/SKILL.md` § Escalation on a hard blocker.
 
-**`--serial` additions** (between step 3 and step 4): **3a. Single diff-review (controller)** — run ONE cheap review agent (`model: haiku`, read-only, the merged commit range named in the prompt, focus: real correctness bugs only, no style findings) and act on its findings before deploying. This replaces the per-ticket `code-review high` fan-out (cost decision 2026-08-25); project-specific risk reviews (e.g. a safety reviewer wired into the project's deploy skill) stay as the project defines them. **3b. Deploy from the merged target branch** — if the project defines a deploy (finish Step 4's project deploy step, or a standing order in the project's CLAUDE.md), the **controller** runs it now, from `<main-repo>` on the freshly merged `<target-branch>`; the subagent was told not to. One deploy target, never concurrent, always the merged state. A failed deploy **stops the run** (no rollback, everything left for inspection — same rule as finish). Then step 4 as above (state update + guarded cleanup).
+**`--serial` additions** (between step 3a and step 4): **3b. Deploy from the merged target branch** — if the project defines a deploy (finish Step 4's project deploy step, or a standing order in the project's CLAUDE.md), the **controller** runs it now, from `<main-repo>` on the freshly merged `<target-branch>`; the subagent was told not to. One deploy target, never concurrent, always the merged state. A failed deploy **stops the run** (no rollback, everything left for inspection — same rule as finish). Then step 4 as above (state update + guarded cleanup).
 
 **`--loop` additions** (after step 4): re-run **P1** — `bd ready` again (merged tickets may have unblocked others), re-apply the order, skip deferred/blocked/conflicted tickets from this run, and continue with P3 for the next ticket. The loop ends when the queue is empty, when every remaining ticket is deferred/blocked, or when the caller's own budget logic says so (tf has no clock — a wake-up timer is the caller's policy).
 

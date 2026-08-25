@@ -73,16 +73,18 @@ This classification drives the gating decision and the verification checklist in
 
 ### 3. Review — evidence, not self-assessment
 
-A self-review by the agent that wrote the code is the weakest form of review there is. Claude Code ships a real one, and it is invocable: `/code-review` at levels `low` through `max` can be started via the `Skill` tool. Use it.
+A self-review by the agent that wrote the code is the weakest form of review there is — but the previous default here, `Skill(code-review)` at level `high`, fans out ~8 parallel finder agents plus a verifier. On a spend-limited run that is the single most expensive step in the whole pipeline, and it can die before producing a single finding: three straight deaths, zero findings, one full 5h Max-plan window burned on it (DSP-Autopilot 2026-08-24/25). Replaced by one cheap, deterministic diff review.
 
 - **Trivial bugs/changes** (≤50 lines, simple fix): no explicit review step. Unchanged.
-- **Everything else**: `Skill(code-review)` with level `high`. Since 2.1.218 it runs as a background subagent and supports `--fix`. Report its findings in step 8 — an empty result is a result and gets stated as one.
+- **Project-owned review agent takes precedence.** If the project's `CLAUDE.md`/`.claude/rules/` names a dedicated review subagent for this kind of change (e.g. a `dsp-safety-reviewer` for a DSP repo), dispatch that one instead of the generic path below — it already knows the project's own risk areas, including risk-carrying diffs.
+- **Everything else**: dispatch **one** `Agent` call, `subagent_type: "general-purpose"`, `model: "haiku"`. Embed the full diff in the prompt yourself (`git diff <target-branch>...HEAD`) — the reviewer checks the diff it's handed, it does not go collect one itself. Ask it to check for correctness bugs, contradictions with the surrounding code/doc text, and call sites or other references the change may have missed. Wait for its result and act on the findings before writing the verdict.
 - **Never `ultra` automatically.** It is `local-jsx`, so the model cannot start it at all, and it bills against usage credits rather than the plan (Pro gets three one-off runs). If a change warrants it, say so in the report and let the user run `/code-review ultra` themselves.
+- **`/code-review high` is no longer run automatically here.** It stays a standing recommendation: note in the report that the user can run it for broader coverage if the single-agent diff review feels thin for this change — it is not gated on, so skipping it costs nothing but is worth surfacing.
 
-**Fallback — required, not optional.** Availability of `/code-review` depends on a server-side gate, and a dispatched worktree agent runs with a reduced toolset. If the call is unavailable or fails, do **not** fall back to asserting the code is fine. Say plainly that no independent review ran, and hand the user the exact command to run it:
+**Fallback — required, not optional.** If the dispatch fails (no `Agent` tool available, or the call errors) — or the project's CLAUDE.md/`.claude/rules/` names a review agent that turns out not to be invocable in this session — do **not** fall back to asserting the code is fine. Say plainly that no independent review ran, and hand the user the exact command to run one:
 
 ```
-Review: not run (code-review unavailable in this session).
+Review: not run (<reason — e.g. Agent tool unavailable in this session>).
 To review manually:  /code-review high
 ```
 
