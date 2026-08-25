@@ -79,7 +79,7 @@ A self-review by the agent that wrote the code is the weakest form of review the
 - **Never `ultra` automatically.** It is `local-jsx`, so the model cannot start it at all, and it bills against usage credits rather than the plan (Pro gets three one-off runs). If a change warrants it, say so in the report and let the user run `/code-review ultra` themselves.
 - **`/code-review high` is no longer run automatically here.** It stays a standing recommendation: note in the report that the user can run it for broader coverage if the single-agent diff review feels thin for this change — it is not gated on, so skipping it costs nothing but is worth surfacing.
 
-**Fallback — required, not optional.** If the dispatch fails (no `Agent` tool available, or the call errors) — or a project-named reviewer doesn't exist where expected — do **not** fall back to asserting the code is fine. Say plainly that no independent review ran, and hand the user the exact command to run one:
+**Fallback — required, not optional.** If the dispatch fails (no `Agent` tool available, or the call errors) — or the project's CLAUDE.md/`.claude/rules/` names a review agent that turns out not to be invocable in this session — do **not** fall back to asserting the code is fine. Say plainly that no independent review ran, and hand the user the exact command to run one:
 
 ```
 Review: not run (<reason — e.g. Agent tool unavailable in this session>).

@@ -301,8 +301,11 @@ You are in an isolated git worktree. Implement this ticket end-to-end:
     Otherwise dispatch **one** `Agent` call yourself — `subagent_type:
     "general-purpose"`, `model: "haiku"` — with the full diff
     (`git diff <target-branch>...HEAD`) embedded directly in its prompt;
-    it reviews the diff it's handed, it does not collect its own. Wait
-    for its result and act on the findings before you write the verdict.
+    it reviews the diff it's handed, it does not collect its own. Ask it
+    to check for correctness bugs, contradictions with the surrounding
+    code/doc text, and call sites or other references the change may
+    have missed. Wait for its result and act on the findings before you
+    write the verdict.
     If the dispatch fails, do NOT substitute your own assessment: put
     `not run (<reason>)` in the verdict's `review` field and say the
     same in the prose, so the controller can hand `/code-review high` to
