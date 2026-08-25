@@ -300,7 +300,12 @@ You are in an isolated git worktree. Implement this ticket end-to-end:
     `.claude/rules/` names a dedicated review agent, dispatch that one.
     Otherwise dispatch **one** `Agent` call yourself — `subagent_type:
     "general-purpose"`, `model: "haiku"` — with the full diff
-    (`git diff <target-branch>...HEAD`) embedded directly in its prompt;
+    (`git diff <target-branch>...HEAD`) embedded directly in its prompt —
+    run the command and paste its OUTPUT into the prompt text: a prompt
+    string is never shell-expanded, so a literal `$(git diff …)` arrives
+    as those characters and the reviewer, handed no diff, reviews the
+    surrounding prose and reports that as findings (a fabricated review
+    that reads like a real one — observed 2026-08-25);
     it reviews the diff it's handed, it does not collect its own. Ask it
     to check for correctness bugs, contradictions with the surrounding
     code/doc text, and call sites or other references the change may
