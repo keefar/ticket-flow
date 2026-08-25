@@ -67,6 +67,8 @@ Before merge:
   - physical hardware interaction only the user can perform (their Pi, their speakers, their room, their peripherals)
   - a genuine subjective preference/taste call that is **not yet resolved** by an existing decision (an open design *choice*, not a confirmed one)
 
+**Third criterion — a determined outcome is *proven*, even when the test itself would need senses or hardware** (User decision 2026-08-25): before marking anything *residual*, check whether the test's outcome is already determined by the data at hand — a quasi-A/A comparison, a delta below any plausible perception or measurement threshold, a branch whose result the existing evidence fixes. If so, close it as *proven* with that evidence; never hand the user a test whose result is a foregone conclusion. And every residual verify task must state the *expected, quantified delta* (dB, ms, visible change) so the user knows what they are checking for. (Evidence: DSP-61n3 — a listening test whose only difference was a Q clamp 13.6→12 on one −3 dB filter, right channel byte-identical; the "no difference" outcome was knowable in advance and the test only cost the user's time.)
+
 This classification drives the gating decision and the verification checklist in step 6.
 
 ### 3. Review — evidence, not self-assessment
