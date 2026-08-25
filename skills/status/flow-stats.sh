@@ -63,6 +63,14 @@
 # token-spend aggregates below, which are specifically about resolved
 # telemetry rows (a telemetry row whose transcript was found and parsed).
 #
+# `unknown` rows are printed and counted by default, no `--all`-style flag
+# to opt in (ticket-flow-4a4): the whole point of this signal is that a
+# wrong stalled? label silently misrepresents most of the data on a hook's
+# first day (211 of 288 agents on this machine's real log), so hiding the
+# corrected bucket behind a flag would just recreate that same silent
+# undercount one layer up — nobody remembers to pass a flag they don't know
+# they need yet.
+#
 # Usage: flow-stats.sh
 #
 # Output, greppable by design (exact keys — see
