@@ -79,5 +79,96 @@ outB2=$(run "sess-B")
 [ -z "$outB2" ] && ok "session B is still silent, unaffected by A's update" \
                || nope "session B is still silent, unaffected by A's update" "$outB2"
 
+# --- ticket-flow-jd8: mode announcements (systemMessage channel) ----------
+MODE_SCRIPT=$(cd "$(dirname "$0")/.." && pwd)/autopilot-mode.sh
+
+write_global() {  # <mode>
+  printf '{"mode": "%s", "updated_at": "2026-08-25T00:00:00+02:00"}' "$1" \
+    > "$STATE_DIR/autopilot-mode.json"
+}
+
+has() { case "$1" in *"$2"*) return 0 ;; *) return 1 ;; esac; }
+
+# off -> session: next hook call announces the switch, names the mode.
+CLAUDE_AUTOPILOT_STATE_DIR="$STATE_DIR" "$MODE_SCRIPT" session --session mode-on >/dev/null
+out=$(run "mode-on")
+has "$out" '"systemMessage"' && has "$out" 'turned ON' && has "$out" 'mode=session' \
+  && ok "session mode: next hook call announces turning ON with the mode name" \
+  || nope "session mode: next hook call announces turning ON with the mode name" "$out"
+
+# staying on: every subsequent call gets exactly one short "still on" line,
+# never a repeat of the "turned on" wording.
+out2=$(run "mode-on")
+has "$out2" 'still on' && ! has "$out2" 'turned ON' \
+  && ok "session mode: stays on -> short still-on line, not a repeat switch-on" \
+  || nope "session mode: stays on -> short still-on line, not a repeat switch-on" "$out2"
+out3=$(run "mode-on")
+[ "$out2" = "$out3" ] \
+  && ok "session mode: still-on line is identical call after call (no drift/noise)" \
+  || nope "session mode: still-on line is identical call after call" "out2=$out2 out3=$out3"
+
+# session -> off: the switch-off is announced exactly once, then silence.
+CLAUDE_AUTOPILOT_STATE_DIR="$STATE_DIR" "$MODE_SCRIPT" off --session mode-on >/dev/null
+out_off1=$(run "mode-on")
+has "$out_off1" 'turned OFF' \
+  && ok "off: next hook call announces turning OFF" \
+  || nope "off: next hook call announces turning OFF" "$out_off1"
+out_off2=$(run "mode-on")
+[ -z "$out_off2" ] \
+  && ok "off: the call after that is completely silent" \
+  || nope "off: the call after that is completely silent" "$out_off2"
+
+# always: a brand-new session_id with no state file of its own inherits the
+# global default and gets its own "turned on" announcement + its own file.
+write_global "always"
+FRESH="mode-fresh-$$"
+[ ! -f "$STATE_DIR/autopilot-$FRESH.json" ] || rm -f "$STATE_DIR/autopilot-$FRESH.json"
+out_fresh=$(run "$FRESH")
+has "$out_fresh" 'turned ON' && has "$out_fresh" 'mode=always' \
+  && ok "always: fresh session with no file inherits the global default and announces ON" \
+  || nope "always: fresh session with no file inherits the global default and announces ON" "$out_fresh"
+[ -f "$STATE_DIR/autopilot-$FRESH.json" ] \
+  && ok "always: inheriting a fresh session writes its own state file" \
+  || nope "always: inheriting a fresh session writes its own state file" "not created"
+python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if d.get("mode")=="always" else 1)' \
+  "$STATE_DIR/autopilot-$FRESH.json" \
+  && ok "always: the new session file records mode=always" \
+  || nope "always: the new session file records mode=always" "$(cat "$STATE_DIR/autopilot-$FRESH.json")"
+
+# AC1 (restated for the mode feature): with no session file AND no global
+# default at all, the hook stays fully silent and creates nothing.
+EMPTYDIR=$(mktemp -d -p /tmp/claude)
+out_empty=$(printf '{"hook_event_name":"UserPromptSubmit","session_id":"never-seen"}' \
+  | CLAUDE_AUTOPILOT_STATE_DIR="$EMPTYDIR" python3 "$SCRIPT" 2>/dev/null)
+[ -z "$out_empty" ] \
+  && ok "no state anywhere: hook is fully silent (mode defaults to off)" \
+  || nope "no state anywhere: hook is fully silent (mode defaults to off)" "$out_empty"
+[ -f "$EMPTYDIR/autopilot-never-seen.json" ] \
+  && nope "no state anywhere: hook must not create a file" "file was created" \
+  || ok "no state anywhere: hook creates no file"
+
+# AC7/AC8 (restated for the mode feature): mode changes on one session_id
+# never leak into another session_id's own file or announcements, and the
+# pre-existing active/job_id re-arm reminder still fires alongside a mode
+# message when both conditions are true at once.
+CLAUDE_AUTOPILOT_STATE_DIR="$STATE_DIR" "$MODE_SCRIPT" session --session isolated-a >/dev/null
+CLAUDE_AUTOPILOT_STATE_DIR="$STATE_DIR" "$MODE_SCRIPT" off --session isolated-b >/dev/null
+run "isolated-a" >/dev/null  # consume isolated-a's own "turned on" announcement
+out_a_untouched=$(run "isolated-a")
+has "$out_a_untouched" 'still on' \
+  && ok "isolated-a: unaffected by isolated-b's independent off" \
+  || nope "isolated-a: unaffected by isolated-b's independent off" "$out_a_untouched"
+
+python3 -c '
+import json
+path = "'"$STATE_DIR"'/autopilot-both.json"
+json.dump({"mode": "session", "last_announced": "session", "active": True, "job_id": None,
+           "updated_at": "2026-08-25T00:00:00+02:00"}, open(path, "w"))
+'
+out_both=$(run "both")
+has "$out_both" '"systemMessage"' && has "$out_both" '"additionalContext"' \
+  && ok "mode still-on message and the re-arm reminder can both appear in one payload" \
+  || nope "mode still-on message and the re-arm reminder can both appear in one payload" "$out_both"
+
 echo "  $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
