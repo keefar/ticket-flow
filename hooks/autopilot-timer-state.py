@@ -150,6 +150,16 @@ def write_session_state(session_id, data):
         pass
 
 
+ARMED_CONTEXT = (
+    "Autopilot is armed in this session. Treat beads that become ready as "
+    "authorised work: once you have answered whatever this prompt asks, "
+    "continue the queue via `/ticket-flow:flow --serial --loop "
+    "--use-recommendations` without asking again. Merely capturing a bead "
+    "is not the same as being told to implement it — if the prompt only "
+    "asks to record something, record it and leave it in the queue. "
+    "Switch off with `autopilot-mode.sh off`."
+)
+
 REARM_CONTEXT = (
     "Autopilot is active in this session but no wake-up timer is armed. "
     "Re-arm it: CronCreate a recurring job with schedule \"7,37 * * * *\" "
@@ -219,9 +229,16 @@ def main():
         state["updated_at"] = now_iso()
         write_session_state(session_id, state)
 
-    additional_context = None
+    mode = state.get("mode") if state.get("mode") in VALID_MODES else "off"
+    parts = []
+    if mode != "off":
+        # The systemMessage above tells the human. This tells the model what
+        # being armed actually authorises — without it the mode is a display
+        # with no effect on behaviour.
+        parts.append(ARMED_CONTEXT)
     if state.get("active") and not state.get("job_id"):
-        additional_context = REARM_CONTEXT
+        parts.append(REARM_CONTEXT)
+    additional_context = "\n".join(parts) if parts else None
 
     if not system_message and not additional_context:
         return

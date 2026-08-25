@@ -170,5 +170,27 @@ has "$out_both" '"systemMessage"' && has "$out_both" '"additionalContext"' \
   && ok "mode still-on message and the re-arm reminder can both appear in one payload" \
   || nope "mode still-on message and the re-arm reminder can both appear in one payload" "$out_both"
 
+# Being armed has to reach the MODEL, not only the human: the systemMessage
+# is what the user sees, additionalContext is what actually authorises the
+# model to keep working the queue. Without this the mode is a display with
+# no effect on behaviour.
+CLAUDE_AUTOPILOT_STATE_DIR="$STATE_DIR" "$MODE_SCRIPT" session --session authz >/dev/null
+run "authz" >/dev/null  # consume the turned-ON announcement
+out_authz=$(run "authz")
+has "$out_authz" 'authorised work' \
+  && ok "armed: the model is told that ready beads count as authorised work" \
+  || nope "armed: the model is told that ready beads count as authorised work" "$out_authz"
+
+has "$out_authz" 'record it and leave it in the queue' \
+  && ok "armed: capturing a bead is explicitly not an implementation order" \
+  || nope "armed: capturing a bead is explicitly not an implementation order" "$out_authz"
+
+CLAUDE_AUTOPILOT_STATE_DIR="$STATE_DIR" "$MODE_SCRIPT" off --session authz >/dev/null
+run "authz" >/dev/null  # consume the turned-OFF announcement
+out_authz_off=$(run "authz")
+has "$out_authz_off" 'authorised work' \
+  && nope "off: no authorisation context is emitted" "$out_authz_off" \
+  || ok "off: no authorisation context is emitted"
+
 echo "  $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
