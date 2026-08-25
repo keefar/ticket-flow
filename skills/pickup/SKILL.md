@@ -17,7 +17,7 @@ Examples:
 ## What it does
 
 1. Validates that the item is in Backlog and DoR is met
-2. Creates a worktree (EnterWorktree, fallback `superpowers:using-git-worktrees`) — or, with `--here`, **adopts** the worktree you are already in (external tool owns it; `/finish` will leave it in place)
+2. Creates a worktree (EnterWorktree — no manual fallback, see step 4) — or, with `--here`, **adopts** the worktree you are already in (external tool owns it; `/finish` will leave it in place)
 3. Sets a `branch:` lock in the bd notes
 4. Moves item Backlog → In Progress
 5. Looks for or scaffolds a plan doc under `docs/superpowers/plans/`
@@ -122,7 +122,7 @@ Guards: must be inside a git worktree, on a named branch, and not the main check
 
 - If worktrees must live **outside** `.claude/worktrees/` (xattr trouble there, build tools that choke on `.claude/`, non-git VCS): do not hand-roll `git worktree add` either — wire a `WorktreeCreate`/`WorktreeRemove` hook pair in `.claude/settings.json`; per the CC docs it replaces the default `git worktree` logic *including the location*, and `EnterWorktree`/`ExitWorktree` keep working on top of it (worktrunk ships a ready-made pair as a CC plugin). Everything downstream (`branch:`-lock, finish cleanup) must then use the path the hook returned, not `.claude/worktrees/<name>`.
 
-**Base ref note**: EnterWorktree defaults to branching from `origin/<default-branch>` — when working on an active feature branch (e.g. `tauri-prototype`), set `worktree.baseRef = "head"` in settings.json or everything since the last main sync is lost.
+**Base ref note**: EnterWorktree defaults to branching from `origin/<default-branch>` — set `worktree.baseRef = "head"` in settings.json or everything since the last push is missing from the fork. **And verify the base even with the setting in place**: right after creation, `git merge-base --is-ancestor <target-branch> HEAD` from inside the worktree — observed once (2026-08-25, directly after a `/reload-plugins`) that EnterWorktree forked from `origin/main` despite `baseRef: "head"`. A stale base caught here costs one `git rebase <target-branch>`; caught at merge time it costs a conflict.
 
 ### 5. Move the item to In Progress + set the branch lock
 

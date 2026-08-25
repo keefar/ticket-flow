@@ -113,7 +113,7 @@ LOCK_BRANCH="$(bd_get_notes "$BD_ID" | grep -oE 'branch: [^ |]+' | head -1 | cut
     3. **ACs still open, or uncommitted work** → re-enter at **step 3** (`/ticket-flow:implement` picks up the plan mid-way; its step 1 derives the item from the branch).
     4. **All ACs look met** → re-enter at **step 5** (`/ticket-flow:finish` — its verification decides, not your impression).
     5. Say in one line that this is a resume and which phase it re-enters.
-  - **Worktree gone but branch exists** (cleanup died between remove and merge, or the harness auto-removed it) → the commits survive on `$LOCK_BRANCH`. Recreate a worktree on that branch (`git worktree add <path> $LOCK_BRANCH`), then resume as above.
+  - **Worktree gone but branch exists** (cleanup died between remove and merge, or the harness auto-removed it) → the commits survive on `$LOCK_BRANCH`. Recreate a worktree on that branch (`git worktree add <path> $LOCK_BRANCH`), then resume as above. For a **fresh** worktree instead, verify its base before working (pickup step 4's base-ref note — a stale fork despite `baseRef: "head"` has been observed once; `git rebase <target-branch>` heals it).
   - **Branch gone too** → the lock is stale (a finished run that missed the note cleanup, or a discarded attempt). Say so, remove the stale `branch:` line via `bd_update_notes_remove_prefix "$BD_ID" "branch:"`, and continue with step 2 as a fresh run.
 
 `--parallel`/`--serial`/`--loop` need none of this: their claim step (P3) skips tickets that are already `in_progress`, and P4a governs a dispatched agent's death. Resume is the `--local` counterpart to P4a.

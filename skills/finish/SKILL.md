@@ -182,6 +182,8 @@ Plus, if a bug log is warranted (multiple hypotheses, algorithmic fix, regressio
 
 ### 7. Worktree cleanup
 
+**In an `EnterWorktree` session** (the `--local` path), prefer the harness's own exit over hand-rolled cleanup: leave the worktree with `ExitWorktree {action: "remove"}` **after** the guard below passed — it removes worktree and branch in one documented step and refuses on uncommitted changes by itself. The manual `git worktree remove` + `branch -d` sequence below remains for controller sessions cleaning up *dispatched* agents' worktrees (which this session never entered).
+
 **Guard first, cleanup second** — two pre-conditions, checked from the main-repo root **before** any `git worktree remove` / `git branch -d` / `git branch -D` in this step (including the commands handed to the user further down). Both are mandatory; if either fails, **stop: touch neither worktree nor branch**, report, and leave the worktree standing for inspection:
 
 ```bash

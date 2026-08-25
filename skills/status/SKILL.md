@@ -44,6 +44,14 @@ The skill is a thin operator-facing wrapper around `skills/status/status.sh`. Ru
 
 The script is sandbox-safe (read-only `bd` calls, no writes, no network) and finishes in <1s on small projects.
 
+**Optional second step — Claude Code drift check** (needs network to github.com; skip silently when offline or when the user asked a narrow question):
+
+```bash
+"${CLAUDE_PLUGIN_ROOT}/skills/status/check-cc-changelog.sh"
+```
+
+It reads the Claude Code releases since the `.cc-checked` marker at the repo root and filters them against `cc-watch-terms.txt` — the terms this plugin's assumptions hang on (worktrees, subagents, hooks, permissions, session lifecycle). A hit is not a defect but a place where an assumption may have moved; list the hits, don't act on them. The script advances the marker itself, so the next run starts where this one ended.
+
 ## Recommendation logic
 
 The script ranks recommendations in this priority order:
@@ -55,7 +63,9 @@ The script ranks recommendations in this priority order:
 5. **Active in-progress beads** — `bd list --status=in_progress` items not done → continue with `/ticket-flow:implement` or `/ticket-flow:finish` in the existing worktree
 6. **Ready work** — `bd ready` count > 0 → pick a bead, `/ticket-flow:flow <id>`
 7. **Nothing pressing** — project is at rest
-8. **Standing diagnostics** (always listed, never conditional) — `/doctor` for the harness itself (hooks, MCP servers, permissions, plugin loading) and, in beads mode, `bd doctor` for beads internals. This script only inspects the project; when tf misbehaves for harness reasons the project looks idle from here, so the pointer has to be visible even on a clean run.
+8. **Standing diagnostics** (always listed, never conditional) — `/doctor` for the harness itself (hooks, MCP servers, permissions, plugin loading) and, in beads mode, `bd doctor` for beads internals. This script only inspects the project; when tf misbehaves for harness reasons the project looks idle from here, so the pointer has to be visible even on a clean run. **Never recommend `/rewind` from here**: it rewinds conversation + files of *this* session, but tf state lives in bd, in worktrees and on branches — a rewind desyncs them from the tracker instead of recovering anything.
+
+Two caveats on class 4 (in-flight worktrees): Claude Code itself sweeps abandoned worktrees periodically, so a small number of leftover directories is not by itself an alarm — judge by the branch (unmerged commits = work), not by the directory's existence.
 
 Items not in any of these classes are surfaced as "NO ACTION NEEDED" so the user sees the clean state explicitly.
 

@@ -62,3 +62,10 @@ cp -rf source dest          # NOT: cp -r source dest
 - `ssh` - use `-o BatchMode=yes`
 - `apt-get` - use `-y` flag
 - `brew` - use `HOMEBREW_NO_AUTO_UPDATE=1`
+
+## Network boundary
+
+Do not push, and do not open PRs, unless the user asks for it in this
+conversation. Merges in this workflow land locally; the user pushes
+deliberately. This explicitly overrides the default behavior of Claude Code
+background sessions, which commit, push and open draft PRs on their own.
