@@ -135,5 +135,66 @@ grep -q 'missing:.*git' <<<"$out" && nope "a linked worktree is recognised as a 
 grep -q 'SCAFFOLDING:.*git' <<<"$out" && ok "git is listed as present inside a worktree" \
   || nope "git is listed as present inside a worktree" "$out"
 
+# 12. Branch lock age: an in_progress bead carrying pickup's `branch:` note
+#     reports its age from bd's own started_at (ticket-flow-76v AC3). Needs a
+#     bd stub that answers `list --status=in_progress --json` and
+#     `show <id> --json` — the global no-op stub above returns nothing for
+#     both, so this test gets its own stub dir prepended to PATH.
+if command -v jq >/dev/null 2>&1; then
+  LOCK_STUB="$(mktemp -d -p /tmp/claude)"
+  cat > "$LOCK_STUB/bd" <<'EOF'
+#!/usr/bin/env bash
+case "$1" in
+  list)
+    case "$*" in
+      *in_progress*) printf '[{"id":"tf-lock-1","started_at":"2026-08-25T12:00:00Z"}]\n' ;;
+    esac
+    exit 0
+    ;;
+  show)
+    if [[ "$2" == "tf-lock-1" ]]; then
+      printf '[{"id":"tf-lock-1","notes":"branch: worktree-agent-fakehash"}]\n'
+    fi
+    exit 0
+    ;;
+  *) exit 0 ;;
+esac
+EOF
+  chmod +x "$LOCK_STUB/bd"
+  LOCK_STARTED_EPOCH="$(date -j -u -f '%Y-%m-%dT%H:%M:%SZ' '2026-08-25T12:00:00Z' +%s)"
+  LOCK_NOW_EPOCH=$((LOCK_STARTED_EPOCH + 15600))  # +4h20m, matches the doc example
+  d=$(make_project beads)
+  out=$( cd "$d" && PATH="$LOCK_STUB:$PATH" TICKET_FLOW_NOW="$LOCK_NOW_EPOCH" "$SCRIPT_UNDER_TEST" 2>&1 )
+  grep -q 'BRANCH LOCKS:        1' <<<"$out" && ok "reports one branch lock" \
+    || nope "reports one branch lock" "$out"
+  grep -qF 'tf-lock-1 -> worktree-agent-fakehash' <<<"$out" && ok "names the id and locked branch" \
+    || nope "names the id and locked branch" "$out"
+  grep -qF 'age: 4h 20m' <<<"$out" && ok "computes lock age from started_at against TICKET_FLOW_NOW" \
+    || nope "computes lock age from started_at against TICKET_FLOW_NOW" "$out"
+
+  # No in_progress items at all → the count line still appears, at zero.
+  d=$(make_project beads)
+  out=$( cd "$d" && "$SCRIPT_UNDER_TEST" 2>&1 )
+  grep -q 'BRANCH LOCKS:        0' <<<"$out" && ok "reports zero branch locks when none are in_progress" \
+    || nope "reports zero branch locks when none are in_progress" "$out"
+else
+  echo "  SKIP — jq not in PATH, branch-lock age tests need it"
+fi
+
+# 13. Worktree idle time: age comes from the branch's last commit, compared
+#     against TICKET_FLOW_NOW (ticket-flow-76v AC4). Uses a real worktree +
+#     a backdated commit rather than faking git output.
+d=$(make_project beads)
+git -C "$d" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
+git -C "$d" worktree add -q "$d/.claude/worktrees/idle-1" -b idle-1 >/dev/null 2>&1
+IDLE_COMMIT_DATE="2026-08-25T10:00:00Z"
+GIT_AUTHOR_DATE="$IDLE_COMMIT_DATE" GIT_COMMITTER_DATE="$IDLE_COMMIT_DATE" \
+  git -C "$d/.claude/worktrees/idle-1" -c user.email=t@t -c user.name=t commit -q --allow-empty -m plan
+IDLE_COMMIT_EPOCH="$(date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "$IDLE_COMMIT_DATE" +%s)"
+IDLE_NOW_EPOCH=$((IDLE_COMMIT_EPOCH + 5400))  # +1h30m
+out=$( cd "$d" && TICKET_FLOW_NOW="$IDLE_NOW_EPOCH" "$SCRIPT_UNDER_TEST" 2>&1 )
+grep -qF 'idle: 1h 30m' <<<"$out" && ok "worktree idle time from the branch's last commit" \
+  || nope "worktree idle time from the branch's last commit" "$out"
+
 echo "  $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

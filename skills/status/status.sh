@@ -3,7 +3,15 @@
 # Sandbox-safe: read-only bd calls, no writes, no network. Finishes in <1s.
 #
 # Usage: status.sh (no args)
+# Env:   TICKET_FLOW_NOW=<epoch-seconds> overrides "now" for every age/idle
+#        calculation below (branch-lock age, worktree idle time). Tests only —
+#        leave unset in normal use, when it falls back to `date -u +%s`.
+#        tf measures and displays these durations; nothing here decides an
+#        action from them (no branch delete, no lock release, no agent
+#        declared dead) — that judgment stays with whoever reads the output.
 set -u
+
+SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # Resolve to git root if possible, else cwd.
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
@@ -11,6 +19,37 @@ cd "$ROOT" || { echo "ERROR: cannot cd to $ROOT" >&2; exit 1; }
 
 BRANCH="$(git branch --show-current 2>/dev/null)"
 [[ -z "$BRANCH" ]] && BRANCH="(not a git repo)"
+
+NOW_EPOCH="${TICKET_FLOW_NOW:-$(date -u +%s)}"
+
+# Format a duration in seconds as "Xd Yh" / "Xh Ym" / "Xm" — display only.
+_fmt_age() {
+  local secs="$1"
+  (( secs < 0 )) && secs=0
+  local d=$(( secs / 86400 ))
+  local h=$(( (secs % 86400) / 3600 ))
+  local m=$(( (secs % 3600) / 60 ))
+  if (( d > 0 )); then
+    printf '%dd %dh' "$d" "$h"
+  elif (( h > 0 )); then
+    printf '%dh %dm' "$h" "$m"
+  else
+    printf '%dm' "$m"
+  fi
+}
+
+# Idle time for a worktree directory: seconds since its branch's last commit —
+# the cheapest signal for "abandoned" (an active agent keeps committing; see
+# implement/finish's incremental-commit convention). Falls back to the
+# directory's own mtime when the branch has no commits yet (worktree just
+# created, first plan commit not made). Echoes an epoch, empty on failure.
+_worktree_last_activity_epoch() {
+  local path="$1"
+  local epoch
+  epoch="$(git -C "$path" log -1 --format=%ct 2>/dev/null)"
+  [[ -z "$epoch" ]] && epoch="$(stat -f %m "$path" 2>/dev/null)"
+  echo "$epoch"
+}
 
 # --- Header ---
 echo "ticket-flow @ $ROOT  (branch: $BRANCH)"
@@ -96,7 +135,12 @@ fi
 printf "IN-FLIGHT:           %d worktree(s) under .claude/worktrees\n" "$WT_COUNT"
 if (( WT_COUNT > 0 )); then
   for p in "${WT_PATHS[@]}"; do
-    printf "  %s\n" "$p"
+    p_epoch="$(_worktree_last_activity_epoch "$p")"
+    if [[ -n "$p_epoch" ]]; then
+      printf "  %s  (idle: %s)\n" "$p" "$(_fmt_age $((NOW_EPOCH - p_epoch)))"
+    else
+      printf "  %s\n" "$p"
+    fi
   done
 fi
 
@@ -107,6 +151,7 @@ BD_BLOCKED=0
 BD_READY=0
 BD_IN_PROGRESS=0
 declare -a READY_IDS
+declare -a LOCK_LINES
 if [[ -d .beads ]] && command -v bd >/dev/null 2>&1; then
   # bd stats output is text; parse with grep+awk.
   STATS_OUT="$(bd stats 2>/dev/null || true)"
@@ -122,6 +167,36 @@ if [[ -d .beads ]] && command -v bd >/dev/null 2>&1; then
   while IFS= read -r line; do
     [[ "$line" =~ ^○[[:space:]]+([a-z0-9-]+) ]] && READY_IDS+=("${BASH_REMATCH[1]}")
   done < <(bd ready 2>/dev/null | head -20)
+
+  # Branch locks: in_progress beads carrying pickup step 5's `branch:` note.
+  # Age is derived from bd's own `started_at` — set the moment status flips to
+  # in_progress, the same bd_set_status call pickup makes immediately before
+  # writing the branch note, so it doubles as lock age without a new field.
+  if command -v jq >/dev/null 2>&1; then
+    [[ -f "$SELF_DIR/../kanban/bd-helper.sh" ]] && source "$SELF_DIR/../kanban/bd-helper.sh"
+    while IFS=$'\t' read -r lock_id lock_started; do
+      [[ -z "$lock_id" ]] && continue
+      lock_branch=""
+      if command -v bd_get_notes >/dev/null 2>&1; then
+        lock_branch="$(bd_get_notes "$lock_id" 2>/dev/null | awk '/^branch:/ {sub(/^branch:[ \t]*/, ""); print; exit}')"
+      fi
+      [[ -z "$lock_branch" ]] && continue
+      lock_epoch=""
+      [[ -n "$lock_started" ]] && lock_epoch="$(date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "$lock_started" +%s 2>/dev/null || true)"
+      if [[ -n "$lock_epoch" ]]; then
+        LOCK_LINES+=("$lock_id -> $lock_branch  (age: $(_fmt_age $((NOW_EPOCH - lock_epoch))), in_progress since $lock_started)")
+      else
+        LOCK_LINES+=("$lock_id -> $lock_branch  (age: unknown — started_at unavailable)")
+      fi
+    done < <(bd list --status=in_progress --json 2>/dev/null | jq -r '.[] | [.id, (.started_at // "")] | @tsv' 2>/dev/null)
+  fi
+  LOCK_COUNT=${#LOCK_LINES[@]}
+  printf "BRANCH LOCKS:        %d\n" "$LOCK_COUNT"
+  if (( LOCK_COUNT > 0 )); then
+    for l in "${LOCK_LINES[@]}"; do
+      printf "  %s\n" "$l"
+    done
+  fi
 fi
 
 # --- Uncommitted ---
