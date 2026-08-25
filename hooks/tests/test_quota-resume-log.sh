@@ -69,8 +69,14 @@ for t in quota_auto_resume_fired quota_auto_resume_stale quota_auto_resume_disab
 done
 
 # --- StopFailure: rate_limit and billing_error -----------------------------
+# NOTE: the real hook input field is `error` (per
+# https://code.claude.com/docs/en/hooks#stopfailure), NOT `error_type`. This
+# test payload uses the real field name deliberately — the previous version
+# of this test sent `error_type`, which matched the (wrong) implementation
+# instead of the real Claude Code schema, and so passed while the real hook
+# logged type: null for every single event (ticket-flow-766).
 for t in rate_limit billing_error; do
-  r=$(run "stopfail-$t" "{\"hook_event_name\":\"StopFailure\",\"error_type\":\"$t\",\"session_id\":\"s2\"}" "")
+  r=$(run "stopfail-$t" "{\"hook_event_name\":\"StopFailure\",\"error\":\"$t\",\"error_details\":\"details-$t\",\"session_id\":\"s2\"}" "")
   rc="${r%%|*}"; log="${r#*|}"
   [ "$rc" -eq 0 ] || nope "StopFailure/$t exits 0" "rc=$rc"
   got=$(field "$log" event)
@@ -79,7 +85,18 @@ for t in rate_limit billing_error; do
   got=$(field "$log" type)
   [ "$got" = "$t" ] && ok "StopFailure/$t logs the right type" \
                     || nope "StopFailure/$t logs the right type" "got=$got"
+  got=$(field "$log" error_details)
+  [ "$got" = "details-$t" ] && ok "StopFailure/$t logs error_details" \
+                             || nope "StopFailure/$t logs error_details" "got=$got"
 done
+
+# --- Notification rows carry error_details: null (field only applies to
+# StopFailure) --------------------------------------------------------------
+r=$(run "notif-error-details-null" '{"hook_event_name":"Notification","notification_type":"quota_auto_resume_fired","session_id":"s6"}' "")
+rc="${r%%|*}"; log="${r#*|}"
+got=$(field "$log" error_details)
+[ "$got" = "null" ] && ok "Notification rows: error_details is null" \
+                     || nope "Notification rows: error_details is null" "got=$got"
 
 # --- Missing ~/.claude.json: script still runs, reset fields are null -----
 r=$(run "missing-claude-json" '{"hook_event_name":"Notification","notification_type":"quota_auto_resume_fired","session_id":"s3"}' "")
