@@ -42,6 +42,32 @@
 #                    chars (the one deliberate free-text field here —
 #                    everything else is an id, count or status; see AC7)
 #
+# ticket-flow-766 A3 finding + decision (2026-08-26): the real
+# ~/.claude/logs/flow-runs.jsonl confirms SubagentStop can fire more than
+# once for the SAME (session_id, agent_id) — one agent had 3 lines, two
+# others had 2, each group seconds apart with identical facts. This hook
+# deliberately does NOT dedupe or suppress repeat firings at write time.
+# Two options were on the table (suppress-on-write vs. keep-and-document);
+# keep won, for three reasons:
+#   1. Suppressing means re-reading and re-parsing the whole log file on
+#      every single invocation to check whether this (session_id, agent_id)
+#      already has a row — an O(log size) cost on every SubagentStop,
+#      working directly against the near-zero-overhead design measured
+#      below (125ms median, almost entirely two python3 starts already).
+#   2. skills/status/flow-stats.sh ALREADY dedupes correctly at READ time
+#      (keeps only the last line per (session_id, agent_id) — see its
+#      `last_index_by_key`/`seen_agents` logic) — the aggregate consumer
+#      this data exists for is not fooled by duplicates today.
+#   3. The multiplicity is itself a real data point (an anomaly in Claude
+#      Code's own SubagentStop lifecycle, not a bug in this hook) — keeping
+#      every firing lets a future reader confirm whether the duplicate
+#      rows are byte-identical (they were, in the one sample checked) or
+#      ever drift, which write-time suppression would permanently destroy.
+# Consequence for anyone reading this log directly instead of through
+# flow-stats.sh: a RAW LINE COUNT IS NOT AN AGENT COUNT. Group by
+# (session_id, agent_id) first — `wc -l` on this file overcounts agents by
+# however many duplicate SubagentStop firings happened to occur.
+#
 # Never blocks and never writes to stdout/stderr on the hook's own behalf (no
 # additionalContext, no systemMessage — a hook that talks back costs context
 # on every single subagent stop, for a script whose entire job is a side
