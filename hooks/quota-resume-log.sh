@@ -15,8 +15,9 @@
 #                  quota_auto_resume_disabled
 #                  (Notification ignores this script's stdout/exit code —
 #                  pure monitoring.)
-#   StopFailure    matcher: error_type — the ones this logs:
-#                  rate_limit | billing_error
+#   StopFailure    matcher: error (the hook input field is `error`, NOT
+#                  `error_type` — see the ticket-flow-766 finding below)
+#                  — the ones this logs: rate_limit | billing_error
 #                  (StopFailure also ignores stdout/exit code except
 #                  terminalSequence — this script runs for its side effect,
 #                  the log line, only.)
@@ -26,8 +27,8 @@
 #   ts                  — local ISO-8601 timestamp of the log write
 #   event               — "Notification" or "StopFailure"
 #   type                — the notification_type (Notification) / error
-#                         (StopFailure) value — see the field-name note
-#                         below, this used to be wrong
+#                         (StopFailure) value — see the ticket-flow-766
+#                         finding below for why this field name matters
 #   error_details       — StopFailure only: the `error_details` field
 #                         from the hook input, or null (Notification
 #                         input carries no such field). Directly useful
