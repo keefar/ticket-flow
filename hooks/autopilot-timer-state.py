@@ -162,10 +162,17 @@ ARMED_CONTEXT = (
 
 REARM_CONTEXT = (
     "Autopilot is active in this session but no wake-up timer is armed. "
-    "Re-arm it: CronCreate a recurring job with schedule \"7,37 * * * *\" "
-    "that prompts this session to continue `/ticket-flow:flow --serial "
-    "--loop`, then record the returned job id in this session's autopilot "
-    "state file so this reminder does not fire again."
+    "Re-arm it as a ONE-SHOT (recurring: false) on the actual reset time — "
+    "never a recurring poll (a recurring 30-min job produced three no-op "
+    "wake-ups in one real run; a guessed time is worse than none). Find "
+    "the reset time, in order: (1) a visible \"session limit resets HH:MM\" "
+    "message already in this conversation; (2) run hooks/next-reset.sh "
+    "(fresh ~/.claude.json usage cache, else a recent quota-events.jsonl "
+    "entry); (3) if that prints RESET_SOURCE=unknown, arm nothing and say "
+    "so — do not guess. Otherwise CronCreate a single-fire job "
+    "(recurring: false) for that time prompting `/ticket-flow:flow "
+    "--serial --loop`, then record the returned job id in this session's "
+    "autopilot state file so this reminder stops firing."
 )
 
 

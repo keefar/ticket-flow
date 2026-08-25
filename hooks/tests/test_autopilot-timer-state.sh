@@ -192,5 +192,29 @@ has "$out_authz_off" 'authorised work' \
   && nope "off: no authorisation context is emitted" "$out_authz_off" \
   || ok "off: no authorisation context is emitted"
 
+# --- ticket-flow-766/e4t nachtrag: REARM_CONTEXT is a one-shot instruction,
+# not the old recurring "7,37 * * * *" cron poll (three no-op wake-ups in
+# one real run is what prompted this change) --------------------------------
+if grep -q '7,37' "$SCRIPT"; then
+  nope "REARM_CONTEXT no longer mentions the old recurring 7,37 schedule" "found 7,37 in $SCRIPT"
+else
+  ok "REARM_CONTEXT no longer mentions the old recurring 7,37 schedule"
+fi
+if grep -q 'recurring: false' "$SCRIPT"; then
+  ok "REARM_CONTEXT tells the model to arm a one-shot (recurring: false)"
+else
+  nope "REARM_CONTEXT tells the model to arm a one-shot (recurring: false)" "recurring: false not found in $SCRIPT"
+fi
+if grep -q 'next-reset.sh' "$SCRIPT"; then
+  ok "REARM_CONTEXT points at hooks/next-reset.sh as a reset-time source"
+else
+  nope "REARM_CONTEXT points at hooks/next-reset.sh as a reset-time source" "not found in $SCRIPT"
+fi
+if grep -q 'arm nothing' "$SCRIPT"; then
+  ok "REARM_CONTEXT states the no-source -> no-timer rule explicitly"
+else
+  nope "REARM_CONTEXT states the no-source -> no-timer rule explicitly" "not found in $SCRIPT"
+fi
+
 echo "  $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
