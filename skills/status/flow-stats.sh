@@ -25,17 +25,41 @@
 # fields rather than the row vanishing (AC5). A transcript is optional per
 # row; the telemetry log line is not.
 #
+# Stall signal: whether an agent is stuck is not a duration threshold, it is
+# whether its time/token counters have stopped advancing — visible as the
+# LAST timestamp in its transcript. So this script also globs
+# TRANSCRIPT_ROOT for subagent transcripts that have NO matching telemetry
+# row at all (still running, or died before SubagentStop could fire) and
+# reports them too. Every AGENT row gets a `state` (done/running/stalled?)
+# and a `since_last_s` (seconds between the transcript's last timestamp and
+# "now"):
+#   telemetry row present            -> state=done (it reported back,
+#                                        regardless of transcript freshness)
+#   telemetry row absent, transcript
+#     timestamp fresher than the hint -> state=running
+#   telemetry row absent, transcript
+#     timestamp older than the hint   -> state=stalled?
+# The stalled?/running split is a display hint only — nothing here acts on
+# it, and the "?" is deliberate (this script cannot tell a hung agent from a
+# dead one, only that it has gone quiet). Orphan rows (no telemetry row) can
+# only report facts read straight from the transcript — ticket, verdict,
+# blockers and review stay empty, and they are excluded from the
+# token-spend aggregates below, which are specifically about finished runs.
+#
 # Usage: flow-stats.sh
 #
 # Output, greppable by design (exact keys — see
 # skills/status/tests/test_flow-stats.sh for the contract):
-#   one "AGENT ticket=… model=… output_tokens=… cache_read_tokens=…
-#        tool_calls=… duration_s=… verdict_valid=… blockers=… review=…"
-#   line per telemetry row (review is last because it is the one field that
+#   one "AGENT ticket=… session_id=… agent_id=… model=… output_tokens=…
+#        cache_read_tokens=… tool_calls=… duration_s=… since_last_s=…
+#        state=… verdict_valid=… blockers=… review=…"
+#   line per agent — one per telemetry row, plus one per orphan transcript
+#   with no telemetry row (review is last because it is the one field that
 #   may contain spaces — everything after "review=" is its value verbatim);
 #   then "AGGREGATE …" lines (agent/token counts, invalid-verdict token
-#   share, duration median/max) and one "MODEL <name> tokens=…" line per
-#   model seen, sorted by token share descending.
+#   share, duration median/max, per-state counts) and one
+#   "MODEL <name> tokens=…" line per model seen, sorted by token share
+#   descending.
 #
 # Env vars (so tests can point this at synthetic data instead of the real
 # machine state):
@@ -43,6 +67,15 @@
 #                                 Default: $HOME/.claude/logs/flow-runs.jsonl
 #   CLAUDE_FLOW_TRANSCRIPT_ROOT — root to search for subagent transcripts.
 #                                 Default: $HOME/.claude/projects
+#   CLAUDE_FLOW_STALL_HINT_S    — display-only threshold (seconds) between
+#                                 state=running and state=stalled? for an
+#                                 orphan transcript. Never triggers an
+#                                 action, only labels a line. Default: 600.
+#   TICKET_FLOW_NOW             — epoch-seconds override for "now" (same
+#                                 convention as skills/status/status.sh),
+#                                 used for since_last_s and the
+#                                 running/stalled? split. Default: current
+#                                 time.
 #
 # bash 3.2 (macOS) compatible; the join/aggregation itself is delegated to
 # python3 (no jq dependency here — unlike verdict-check.sh, everything this
@@ -61,10 +94,24 @@ fi
 
 LOG_FILE="$LOG_FILE" TRANSCRIPT_ROOT="$TRANSCRIPT_ROOT" python3 -c '
 import glob, json, os, statistics
-from datetime import datetime
+from datetime import datetime, timezone
 
 log_path = os.environ["LOG_FILE"]
 transcript_root = os.environ["TRANSCRIPT_ROOT"]
+
+try:
+    STALL_HINT_S = int(os.environ.get("CLAUDE_FLOW_STALL_HINT_S", "600"))
+except (ValueError, TypeError):
+    STALL_HINT_S = 600
+
+_now_override = os.environ.get("TICKET_FLOW_NOW", "")
+if _now_override:
+    try:
+        NOW = datetime.fromtimestamp(int(_now_override), tz=timezone.utc)
+    except (ValueError, TypeError):
+        NOW = datetime.now(timezone.utc)
+else:
+    NOW = datetime.now(timezone.utc)
 
 
 def load_jsonl(path):
@@ -165,13 +212,45 @@ def parse_transcript(path):
         "tool_calls": tool_calls,
         "model": model,
         "duration_s": duration_s,
+        "ts_max": ts_max,
     }
+
+
+def since_last_seconds(ts_max):
+    """Seconds between the transcripts last timestamp and NOW, or None if
+    there is no timestamp to measure from — the basis of the stall signal:
+    counters that have stopped advancing, not a fixed duration threshold."""
+    if not ts_max:
+        return None
+    try:
+        return (NOW - parse_ts(ts_max)).total_seconds()
+    except Exception:
+        return None
 
 
 def esc(v):
     if v is None:
         return ""
     return str(v).replace("\n", " ").replace("\r", " ")
+
+
+def num(v, fmt="%d"):
+    return "" if v is None else (fmt % v)
+
+
+def agent_line(ticket, session_id, agent_id, model, output_tokens, cache_read_tokens,
+               tool_calls, duration_s, since_last, state, verdict_valid, blockers, review):
+    return (
+        "AGENT ticket=%s session_id=%s agent_id=%s model=%s output_tokens=%s "
+        "cache_read_tokens=%s tool_calls=%s duration_s=%s since_last_s=%s state=%s "
+        "verdict_valid=%s blockers=%s review=%s"
+        % (
+            esc(ticket), esc(session_id), esc(agent_id), esc(model),
+            num(output_tokens), num(cache_read_tokens), num(tool_calls),
+            num(duration_s, "%.0f"), num(since_last, "%.0f"), esc(state),
+            esc(verdict_valid), esc(blockers), esc(review),
+        )
+    )
 
 
 rows = load_jsonl(log_path)
@@ -183,10 +262,13 @@ invalid_agents = 0
 durations = []
 by_model = {}
 out_lines = []
+seen_agents = set()
+state_counts = {"done": 0, "running": 0, "stalled?": 0}
 
 for r in rows:
     session_id = r.get("session_id")
     agent_id = r.get("agent_id")
+    seen_agents.add((session_id, agent_id))
     ticket = r.get("ticket")
     verdict_valid = bool(r.get("verdict_valid"))
     blockers = r.get("blockers")
@@ -194,14 +276,14 @@ for r in rows:
 
     tpath = find_transcript(session_id, agent_id)
     usage = parse_transcript(tpath) if tpath else None
+    state_counts["done"] += 1
 
     if usage is None:
         unresolved += 1
-        out_lines.append(
-            "AGENT ticket=%s model= output_tokens= cache_read_tokens= tool_calls= "
-            "duration_s= verdict_valid=%s blockers=%s review=%s"
-            % (esc(ticket), str(verdict_valid).lower(), esc(blockers), esc(review))
-        )
+        out_lines.append(agent_line(
+            ticket, session_id, agent_id, None, None, None, None, None, None,
+            "done", str(verdict_valid).lower(), blockers, review,
+        ))
         continue
 
     resolved += 1
@@ -220,21 +302,47 @@ for r in rows:
     if usage["model"]:
         by_model[usage["model"]] = by_model.get(usage["model"], 0) + agent_total
 
-    out_lines.append(
-        "AGENT ticket=%s model=%s output_tokens=%d cache_read_tokens=%d tool_calls=%d "
-        "duration_s=%s verdict_valid=%s blockers=%s review=%s"
-        % (
-            esc(ticket),
-            esc(usage["model"]),
-            usage["output_tokens"],
-            usage["cache_read_tokens"],
-            usage["tool_calls"],
-            ("%.0f" % usage["duration_s"]) if usage["duration_s"] is not None else "",
-            str(verdict_valid).lower(),
-            esc(blockers),
-            esc(review),
-        )
-    )
+    out_lines.append(agent_line(
+        ticket, session_id, agent_id, usage["model"], usage["output_tokens"],
+        usage["cache_read_tokens"], usage["tool_calls"], usage["duration_s"],
+        since_last_seconds(usage["ts_max"]), "done", str(verdict_valid).lower(),
+        blockers, review,
+    ))
+
+# --- orphan transcripts: no matching telemetry row at all (still running,
+# or died before SubagentStop could fire) — see header comment. Their
+# token/verdict facts are unknown by construction, so they get their own
+# state bucket and stay out of the token-spend aggregates above.
+orphan_paths = sorted(glob.glob(
+    os.path.join(transcript_root, "*", "*", "subagents", "agent-*.jsonl")
+))
+for p in orphan_paths:
+    base = os.path.basename(p)
+    if not (base.startswith("agent-") and base.endswith(".jsonl")):
+        continue
+    agent_id = base[len("agent-"):-len(".jsonl")]
+    parts = p.split(os.sep)
+    if len(parts) < 3:
+        continue
+    session_id = parts[-3]
+    if (session_id, agent_id) in seen_agents:
+        continue
+    seen_agents.add((session_id, agent_id))
+
+    usage = parse_transcript(p)
+    if usage is None:
+        continue
+    since = since_last_seconds(usage["ts_max"])
+    if since is None:
+        continue
+    state = "running" if since <= STALL_HINT_S else "stalled?"
+    state_counts[state] += 1
+
+    out_lines.append(agent_line(
+        None, session_id, agent_id, usage["model"], usage["output_tokens"],
+        usage["cache_read_tokens"], usage["tool_calls"], usage["duration_s"],
+        since, state, None, None, None,
+    ))
 
 for line in out_lines:
     print(line)
@@ -253,6 +361,10 @@ if durations:
     )
 else:
     print("AGGREGATE duration_median_s= duration_max_s= duration_n=0")
+print(
+    "AGGREGATE states done=%d running=%d stalled?=%d"
+    % (state_counts["done"], state_counts["running"], state_counts["stalled?"])
+)
 for model, tok in sorted(by_model.items(), key=lambda kv: -kv[1]):
     print("MODEL %s tokens=%d" % (model, tok))
 '

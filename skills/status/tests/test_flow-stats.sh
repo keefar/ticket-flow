@@ -151,5 +151,111 @@ RC2=$?
 case "$OUT2" in *"no telemetry log"*) ok "no telemetry log yet: says so instead of crashing" ;;
                 *) nope "no telemetry log yet: says so instead of crashing" "$OUT2" ;; esac
 
+# --- Stall signal: state in {done, running, stalled?} ----------------------
+# Independent fixture from the one above: one telemetry row (state=done
+# regardless of transcript staleness), one orphan transcript (no telemetry
+# row) with a recent last-timestamp (state=running), one orphan transcript
+# with a stale last-timestamp (state=stalled?). "now" and the stall
+# threshold are both fixed via TICKET_FLOW_NOW / CLAUDE_FLOW_STALL_HINT_S so
+# the numbers are exact, not clock-dependent.
+ROOT2="$WORK/transcripts2"
+LOG2="$WORK/flow-runs2.jsonl"
+NOWFILE="$WORK/now-epoch.txt"
+
+python3 -c '
+import json, os, sys
+from datetime import datetime, timedelta, timezone
+
+root, log_path, now_file = sys.argv[1], sys.argv[2], sys.argv[3]
+
+now = datetime(2026, 8, 10, 12, 0, 0, tzinfo=timezone.utc)
+with open(now_file, "w", encoding="utf-8") as fh:
+    fh.write(str(int(now.timestamp())))
+
+
+def write_transcript(path, last_dt):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps({
+            "type": "user",
+            "timestamp": (last_dt - timedelta(seconds=5)).strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+        }) + "\n")
+        fh.write(json.dumps({
+            "type": "assistant",
+            "timestamp": last_dt.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+            "message": {"model": "model-x",
+                        "usage": {"input_tokens": 1, "output_tokens": 10,
+                                  "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0},
+                        "content": [{"type": "text"}]},
+        }) + "\n")
+
+
+# done: telemetry row present. Transcript timestamp is 90 minutes stale here
+# ON PURPOSE, to prove staleness alone never overrides a present telemetry
+# row.
+done_ts = now - timedelta(minutes=90)
+write_transcript(os.path.join(root, "proj-y", "sessDone", "subagents", "agent-agentDone.jsonl"), done_ts)
+
+# running: no telemetry row, last transcript entry 30s before "now".
+running_ts = now - timedelta(seconds=30)
+write_transcript(os.path.join(root, "proj-y", "sessRunning", "subagents", "agent-agentRunning.jsonl"), running_ts)
+
+# stalled?: no telemetry row, last transcript entry 900s before "now" (the
+# test invocation below sets the stall hint to 300s).
+stalled_ts = now - timedelta(seconds=900)
+write_transcript(os.path.join(root, "proj-y", "sessStalled", "subagents", "agent-agentStalled.jsonl"), stalled_ts)
+
+with open(log_path, "w", encoding="utf-8") as fh:
+    fh.write(json.dumps({
+        "ts": now.isoformat(), "session_id": "sessDone", "agent_id": "agentDone",
+        "agent_type": "general-purpose", "cwd": "/d", "ticket": "tf-done", "verdict_valid": True,
+        "proven": 1, "residual": 0, "blockers": 0, "commits": 1, "branch": "wt-done",
+        "sha": "aaa1111", "review": "done ok",
+    }) + "\n")
+' "$ROOT2" "$LOG2" "$NOWFILE"
+
+TICKET_FLOW_NOW=$(cat "$NOWFILE")
+
+OUT2S=$(CLAUDE_FLOW_TELEMETRY_LOG="$LOG2" CLAUDE_FLOW_TRANSCRIPT_ROOT="$ROOT2" \
+        TICKET_FLOW_NOW="$TICKET_FLOW_NOW" CLAUDE_FLOW_STALL_HINT_S=300 \
+        "$SCRIPT_UNDER_TEST")
+RC2S=$?
+
+[ "$RC2S" -eq 0 ] && ok "stall-signal: exits 0" || nope "stall-signal: exits 0" "rc=$RC2S"
+
+line_done=$(printf '%s\n' "$OUT2S" | grep '^AGENT ticket=tf-done ')
+case "$line_done" in
+  *"since_last_s=5400"*"state=done"*"verdict_valid=true"*)
+    ok "stall-signal: a telemetry row is state=done regardless of transcript staleness" ;;
+  *) nope "stall-signal: a telemetry row is state=done regardless of transcript staleness" "$line_done" ;;
+esac
+
+line_running=$(printf '%s\n' "$OUT2S" | grep 'agent_id=agentRunning ')
+case "$line_running" in
+  *"ticket= "*"session_id=sessRunning"*"since_last_s=30"*"state=running"*"verdict_valid= "*)
+    ok "stall-signal: a fresh orphan transcript (no telemetry row) is state=running" ;;
+  *) nope "stall-signal: a fresh orphan transcript (no telemetry row) is state=running" "$line_running" ;;
+esac
+
+line_stalled=$(printf '%s\n' "$OUT2S" | grep 'agent_id=agentStalled ')
+case "$line_stalled" in
+  *"session_id=sessStalled"*"since_last_s=900"*"state=stalled?"*)
+    ok "stall-signal: a stale orphan transcript (no telemetry row) is state=stalled?" ;;
+  *) nope "stall-signal: a stale orphan transcript (no telemetry row) is state=stalled?" "$line_stalled" ;;
+esac
+
+case "$OUT2S" in *"AGGREGATE states done=1 running=1 stalled?=1"*)
+  ok "stall-signal: aggregate counts exactly one agent per state" ;;
+  *) nope "stall-signal: aggregate counts exactly one agent per state" "$OUT2S" ;; esac
+
+# The stall hint is a display split ONLY — moving it must not touch the
+# done row (already reported), only reclassify the running/stalled? pair.
+OUT2S_WIDE=$(CLAUDE_FLOW_TELEMETRY_LOG="$LOG2" CLAUDE_FLOW_TRANSCRIPT_ROOT="$ROOT2" \
+             TICKET_FLOW_NOW="$TICKET_FLOW_NOW" CLAUDE_FLOW_STALL_HINT_S=1000 \
+             "$SCRIPT_UNDER_TEST")
+case "$OUT2S_WIDE" in *"AGGREGATE states done=1 running=2 stalled?=0"*)
+  ok "stall-signal: CLAUDE_FLOW_STALL_HINT_S widens the running window (display only)" ;;
+  *) nope "stall-signal: CLAUDE_FLOW_STALL_HINT_S widens the running window (display only)" "$OUT2S_WIDE" ;; esac
+
 echo "  $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
