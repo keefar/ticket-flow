@@ -36,14 +36,29 @@
 #                         API string ("429 Too Many Requests"), `type`
 #                         is the coarse bucket it maps to.
 #   session_id          — from the hook input
-#   reset_at            — utilization.five_hour.resets_at from
-#                         $CLAUDE_JSON (default $HOME/.claude.json),
-#                         or null if unavailable
-#   cache_fetched_at_ms — cachedUsageUtilization.fetchedAtMs, or null
-#   cache_age_s         — seconds between now and cache_fetched_at_ms, or
-#                         null — the cache is known to run stale for many
-#                         hours, so every reset_at reading carries this
-#                         alongside it rather than being trusted bare.
+#   reset_at            — the best available reset time, as an ISO-8601
+#                         string regardless of which source produced it
+#                         (see ticket-flow-1vw below), or null if none of
+#                         the three sources had anything usable.
+#   reset_source        — "transcript" | "cache" | "log" | null: which of
+#                         the three sources actually produced `reset_at`.
+#                         See the ticket-flow-1vw finding for why this
+#                         field has to exist.
+#   cache_fetched_at_ms — populated only when reset_source is "cache" or
+#                         "log" (both are ultimately snapshots of the
+#                         same $CLAUDE_JSON usage cache — "log" just
+#                         relays an older snapshot of it); null for
+#                         "transcript" (a live read, no cache involved)
+#                         and for a null reset_source.
+#   cache_age_s         — seconds between now and cache_fetched_at_ms,
+#                         recomputed at log-write time; null under the
+#                         same conditions as cache_fetched_at_ms.
+#   rateLimitType       — "five_hour" or a money-ceiling type, straight
+#                         from the transcript's `quotaLimits.rateLimitType`
+#                         — see ticket-flow-1vw. Populated only when
+#                         reset_source is "transcript" (the cache/log
+#                         sources never carried this field at all).
+#   overageStatus       — same transcript-only condition as rateLimitType.
 #
 # ticket-flow-766 finding (2026-08-26): every one of the first 18 real
 # StopFailure log lines (2026-08-25, a DSP session with seven limit-deaths)
@@ -84,6 +99,28 @@
 # 0-Notification split as proof that Claude Code "never attempts a resume"
 # would be reading more into the data than it supports.
 #
+# ticket-flow-1vw finding (2026-08-26): every reset_at this script had ever
+# logged came straight from $CLAUDE_JSON's cachedUsageUtilization — a
+# `/usage`-COMMAND cache that only refreshes when something runs `/usage`,
+# and was measured 56+ hours stale on this machine while the client showed
+# the correct reset time throughout. That live signal was sitting one
+# layer down: every session transcript line for an actual rate-limit
+# rejection carries a top-level `quotaLimits` object (sibling to `message`,
+# NOT part of the documented StopFailure hook input itself — it has to be
+# read from the transcript file) with `resetsAt` as epoch seconds plus
+# `rateLimitType` and `overageStatus`, fields the cache never had at all.
+# This hook is itself a Notification/StopFailure hook, so — unlike
+# next-reset.sh, which is invoked standalone and has to derive a transcript
+# path from scratch — it already gets `transcript_path` handed to it
+# directly on stdin as a common input field (confirmed against the
+# official reference: both the Notification and StopFailure JSON examples
+# there include it). Reused the same three-source order as next-reset.sh
+# (transcript -> cache -> log) rather than inventing a second one, and
+# added `reset_source` alongside `reset_at` because, once `reset_at` can
+# come from three different places, reporting `cache_age_s` unconditionally
+# (the old behaviour) would mislabel a transcript- or log-derived
+# `reset_at` as if it carried the live cache's own staleness.
+#
 # Same "raw line count != real count" caveat as hooks/flow-telemetry.sh
 # (see that script's header for the SubagentStop-duplicates decision): this
 # script does not dedupe repeat firings for what might be the same logical
@@ -93,8 +130,8 @@
 #
 # Never blocks, never fails loudly, always exits 0 — a hook that crashes is
 # worse than one that writes an incomplete line. A missing/unreadable
-# ~/.claude.json is not an error here: the reset-time fields just come out
-# null and the event is still logged.
+# ~/.claude.json, quota log, or transcript is not an error here: the
+# affected fields just come out null and the event is still logged.
 #
 # Install:
 #   cp <plugin-dir>/hooks/quota-resume-log.sh \
@@ -127,10 +164,28 @@
 #   hooks, not replacing them — multiple matcher entries per event are
 #   allowed.)
 #
-# Env vars (both exist so tests can redirect the script's I/O without
-# touching the real files):
-#   CLAUDE_QUOTA_LOG — log destination. Default: $HOME/.claude/logs/quota-events.jsonl
-#   CLAUDE_JSON      — usage-cache source. Default: $HOME/.claude.json
+# Env vars (so tests can redirect the script I/O without touching the real
+# files):
+#   CLAUDE_QUOTA_LOG                   — log destination AND the source for
+#                                         the "log" fallback (this script
+#                                         reads its own destination file
+#                                         BEFORE appending the new row).
+#                                         Default: $HOME/.claude/logs/quota-events.jsonl
+#   CLAUDE_JSON                        — usage-cache source.
+#                                         Default: $HOME/.claude.json
+#   TICKET_FLOW_QUOTA_CACHE_MAX_AGE_S  — freshness threshold in seconds for
+#                                         the cache/log sources (the
+#                                         transcript source has no window —
+#                                         see next-reset.sh header).
+#                                         Default: 1800
+#   TICKET_FLOW_NOW                    — epoch-seconds override for "now"
+#                                         (tests only; same convention as
+#                                         next-reset.sh).
+#
+# The transcript path itself is NOT an env var here — it comes straight
+# from the hook input JSON's `transcript_path` field (see the
+# ticket-flow-1vw finding above), so a test only needs to put that field
+# in its synthetic hook JSON to exercise this path.
 
 set -u
 
@@ -139,13 +194,15 @@ INPUT=$(cat 2>/dev/null || true)
 
 LOG_FILE="${CLAUDE_QUOTA_LOG:-$HOME/.claude/logs/quota-events.jsonl}"
 CJ_PATH="${CLAUDE_JSON:-$HOME/.claude.json}"
+MAX_AGE="${TICKET_FLOW_QUOTA_CACHE_MAX_AGE_S:-1800}"
+NOW_OVERRIDE="${TICKET_FLOW_NOW:-}"
 
 LOG_DIR=$(dirname "$LOG_FILE" 2>/dev/null || true)
 [ -n "$LOG_DIR" ] && mkdir -p "$LOG_DIR" 2>/dev/null
 
-printf '%s' "$INPUT" | CJ_PATH="$CJ_PATH" LOG_FILE="$LOG_FILE" python3 -c '
+printf '%s' "$INPUT" | CJ_PATH="$CJ_PATH" LOG_FILE="$LOG_FILE" MAX_AGE_S="$MAX_AGE" NOW_OVERRIDE="$NOW_OVERRIDE" python3 -c '
 import json, os, sys, time
-from datetime import datetime
+from datetime import datetime, timezone
 
 try:
     d = json.load(sys.stdin)
@@ -171,26 +228,146 @@ else:
     error_details = d.get("error_details")
 
 session_id = d.get("session_id")
+transcript_path = d.get("transcript_path")
 
-reset_at = None
-fetched_at_ms = None
-cache_age_s = None
+def now_epoch():
+    override = os.environ.get("NOW_OVERRIDE", "")
+    if override:
+        try:
+            return float(override)
+        except ValueError:
+            pass
+    return time.time()
 
-cj_path = os.environ.get("CJ_PATH", "")
-try:
-    with open(cj_path, encoding="utf-8") as fh:
-        cj = json.load(fh)
+def parse_iso(s):
+    if not isinstance(s, str) or not s:
+        return None
+    try:
+        return datetime.fromisoformat(s).timestamp()
+    except Exception:
+        return None
+
+def iso_from_epoch(epoch):
+    try:
+        return datetime.fromtimestamp(epoch, tz=timezone.utc).isoformat()
+    except Exception:
+        return None
+
+def max_age_s():
+    try:
+        v = float(os.environ.get("MAX_AGE_S", "1800") or 1800)
+    except ValueError:
+        v = 1800.0
+    return v
+
+NOW = now_epoch()
+MAX_AGE = max_age_s()
+
+def fresh_epoch(resets_at, fetched_at_ms):
+    if not isinstance(fetched_at_ms, (int, float)):
+        return None
+    age = NOW - (fetched_at_ms / 1000.0)
+    if age < 0 or age > MAX_AGE:
+        return None
+    return parse_iso(resets_at)
+
+def from_transcript():
+    # Same rule as next-reset.sh: no freshness-WINDOW test — a transcript
+    # row is a direct observation of an actual API rejection, not a
+    # periodic snapshot. The only check is whether its resetsAt has
+    # already passed. Scans oldest-to-newest so the LAST occurrence wins.
+    if not transcript_path:
+        return None
+    try:
+        with open(transcript_path, encoding="utf-8") as fh:
+            lines = fh.readlines()
+    except Exception:
+        return None
+    last_q = None
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except Exception:
+            continue
+        if not isinstance(row, dict):
+            continue
+        q = row.get("quotaLimits")
+        if isinstance(q, dict) and isinstance(q.get("resetsAt"), (int, float)):
+            last_q = q
+    if last_q is None:
+        return None
+    if last_q.get("resetsAt") <= NOW:
+        return None
+    return last_q
+
+def from_cache():
+    try:
+        with open(os.environ.get("CJ_PATH", ""), encoding="utf-8") as fh:
+            cj = json.load(fh)
+    except Exception:
+        return None
+    if not isinstance(cj, dict):
+        return None
     cu = cj.get("cachedUsageUtilization") or {}
     fetched_at_ms = cu.get("fetchedAtMs")
     util = cu.get("utilization") or {}
     five = util.get("five_hour") or {}
-    reset_at = five.get("resets_at")
-    if isinstance(fetched_at_ms, (int, float)):
-        cache_age_s = round(time.time() - (fetched_at_ms / 1000.0), 1)
-except Exception:
-    reset_at = None
-    fetched_at_ms = None
-    cache_age_s = None
+    resets_at = five.get("resets_at")
+    if fresh_epoch(resets_at, fetched_at_ms) is None:
+        return None
+    return {"reset_at": resets_at, "cache_fetched_at_ms": fetched_at_ms}
+
+def from_log():
+    try:
+        with open(os.environ.get("LOG_FILE", ""), encoding="utf-8") as fh:
+            lines = [l for l in fh if l.strip()]
+    except Exception:
+        return None
+    for line in reversed(lines):
+        try:
+            row = json.loads(line)
+        except Exception:
+            continue
+        if not isinstance(row, dict):
+            continue
+        if fresh_epoch(row.get("reset_at"), row.get("cache_fetched_at_ms")) is not None:
+            return {"reset_at": row.get("reset_at"), "cache_fetched_at_ms": row.get("cache_fetched_at_ms")}
+    return None
+
+reset_at = None
+reset_source = None
+cache_fetched_at_ms = None
+cache_age_s = None
+rate_limit_type = None
+overage_status = None
+
+q = from_transcript()
+if q is not None:
+    reset_source = "transcript"
+    reset_at = iso_from_epoch(q.get("resetsAt"))
+    rate_limit_type = q.get("rateLimitType")
+    overage_status = q.get("overageStatus")
+else:
+    c = from_cache()
+    if c is not None:
+        reset_source = "cache"
+        reset_at = c["reset_at"]
+        cache_fetched_at_ms = c["cache_fetched_at_ms"]
+    else:
+        l = from_log()
+        if l is not None:
+            reset_source = "log"
+            reset_at = l["reset_at"]
+            cache_fetched_at_ms = l["cache_fetched_at_ms"]
+
+if cache_fetched_at_ms is not None:
+    try:
+        cache_age_s = round(NOW - (cache_fetched_at_ms / 1000.0), 1)
+    except Exception:
+        cache_age_s = None
 
 row = {
     "ts": datetime.now().astimezone().isoformat(timespec="seconds"),
@@ -199,8 +376,11 @@ row = {
     "error_details": error_details,
     "session_id": session_id,
     "reset_at": reset_at,
-    "cache_fetched_at_ms": fetched_at_ms,
+    "reset_source": reset_source,
+    "cache_fetched_at_ms": cache_fetched_at_ms,
     "cache_age_s": cache_age_s,
+    "rateLimitType": rate_limit_type,
+    "overageStatus": overage_status,
 }
 
 out_path = os.environ.get("LOG_FILE", "")
