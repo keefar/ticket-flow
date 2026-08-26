@@ -149,6 +149,9 @@ All bash 3.2-compatible, resolving their own directory via `$(dirname "$0")`; sk
 |---|---|---|
 | `git config ticket-flow.visibility` | consumer repo | `public` · `private` · `local` — what the visibility gate judges by; set by `/ticket-flow:publish` |
 | `TICKET_FLOW_VISIBILITY_OK=1` | command prefix | Deliberate one-shot override of the visibility gate |
+| `CLAUDE_QUOTA_LOG` / `CLAUDE_FLOW_TELEMETRY_LOG` | env var | Redirect the quota-event and run-telemetry logs; default under `$HOME/.claude/logs/` |
+| `CLAUDE_AUTOPILOT_STATE_DIR` | env var | Where the per-session autopilot state files live; default `$HOME/.claude/state` |
+| `TICKET_FLOW_QUOTA_CACHE_MAX_AGE_S` | env var | Freshness threshold before `next-reset.sh` trusts the `/usage` cache (default 1800) |
 | `TICKET_FLOW_NOW=<epoch-seconds>` | env var | Overrides "now" for `/ticket-flow:status`'s branch-lock age and worktree idle-time display; tests only |
 | `worktree.baseRef: "head"` | `.claude/settings.json` | Dispatched worktrees fork from local HEAD instead of `origin/<default>` — mandatory for the no-push workflow; set by init, enforced by the dispatch-base gate |
 | `worktree.symlinkDirectories` | `.claude/settings.json` | Dependency dirs (e.g. `node_modules`) shared into worktrees instead of reinstalled; set by init |
